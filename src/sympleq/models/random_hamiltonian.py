@@ -370,12 +370,7 @@ def random_gate_symmetric_hamiltonian(G: Gate,
                                       n_qudits: int,
                                       n_paulis: int | None = None,
                                       weight_mode: str = 'uniform',
-                                      scrambled: bool = False,
-                                      # generation controls
-                                      extra_orbit_budget: int = 10_000,   # how many extra random orbit seeds to add after basis orbits
-                                      avoid_rounding: bool = True,        # recommended True for rank robustness
-                                      target_count_tolerance: float = 0.10,  # acceptable relative deviation from n_paulis
-                                      ) -> PauliSum:
+                                      scrambled: bool = False) -> PauliSum:
     """
     Generate a gate-symmetric Hamiltonian while enforcing Hermiticity.
 
