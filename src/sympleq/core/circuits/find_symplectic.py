@@ -311,18 +311,47 @@ def map_single_pauli_string_to_target(
 
 
 def map_pauli_sum_to_target_tableau(
-    pauli_sum_tableau: TableauType, target_pauli_sum_tableau: TableauType, p: int = 2
+    pauli_sum_tableau: TableauType,
+    target_pauli_sum_tableau: TableauType,
+    p: int = 2,
+    method: str = "inverse",
 ) -> TableauType:
     """
-    Map a Pauli sum to a target Pauli sum using symplectic transvections.
+    Map a Pauli sum tableau to a target tableau.
+
+    ``method="inverse"`` is the default and computes the unique row-action map
+    from a complete independent Pauli basis. ``method="transvection"`` uses the
+    constructive transvection path. ``method="auto"`` keeps the old compatibility
+    behavior: try the inverse method first, then fall back to transvections.
     """
     if not check_mappable_via_clifford(pauli_sum_tableau, target_pauli_sum_tableau, p=p):
         raise Exception(f'SPM not equal. Cannot map\n{pauli_sum_tableau} to\n{target_pauli_sum_tableau}')
 
-    complete_basis_map = _map_complete_basis_to_target(pauli_sum_tableau, target_pauli_sum_tableau, p=p)
-    if complete_basis_map is not None:
-        return complete_basis_map
+    method_key = str(method).lower()
+    if method_key not in {"inverse", "transvection", "auto"}:
+        raise ValueError("method must be one of 'inverse', 'transvection', or 'auto'.")
 
+    if method_key in {"inverse", "auto"}:
+        complete_basis_map = _map_complete_basis_to_target(pauli_sum_tableau, target_pauli_sum_tableau, p=p)
+        if complete_basis_map is not None:
+            return complete_basis_map
+        if method_key == "inverse":
+            raise ValueError(
+                "Inverse tableau mapping requires the input tableau to contain "
+                "a complete independent Pauli basis."
+            )
+
+    return _map_pauli_sum_to_target_tableau_by_transvections(
+        pauli_sum_tableau,
+        target_pauli_sum_tableau,
+        p=p,
+    )
+
+
+def _map_pauli_sum_to_target_tableau_by_transvections(
+    pauli_sum_tableau: TableauType, target_pauli_sum_tableau: TableauType, p: int = 2
+) -> TableauType:
+    """Map a Pauli tableau to a target tableau using transvections."""
     if p != 2:
         from sympleq.core.circuits.find_symplectic_qudits import map_paulisum_to_target_paulisum
 
@@ -349,6 +378,31 @@ def map_pauli_sum_to_target_tableau(
         F = (F @ F_map) % p
 
     return F
+
+
+def symplectic_from_pauli_permutation(
+    pauli_sum_tableau: TableauType,
+    permutation: TableauType,
+    p: int = 2,
+    method: str = "inverse",
+) -> TableauType:
+    """
+    Return the row-action symplectic map induced by a Pauli-row permutation.
+
+    The returned matrix ``F`` satisfies ``tableau @ F == tableau[permutation]``
+    modulo ``p`` when the permutation preserves the symplectic product matrix.
+    This is graph-independent core logic used by higher-level symmetry finders.
+    The default method is the inverse-basis lift.
+    """
+    tableau = np.asarray(pauli_sum_tableau, dtype=int) % p
+    pi = np.asarray(permutation, dtype=np.int64).reshape(-1)
+    if tableau.ndim != 2:
+        raise ValueError("pauli_sum_tableau must be a 2D tableau.")
+    if pi.shape[0] != tableau.shape[0]:
+        raise ValueError("permutation length must match the number of tableau rows.")
+    if sorted(pi.tolist()) != list(range(tableau.shape[0])):
+        raise ValueError("permutation must be a permutation of the tableau row indices.")
+    return map_pauli_sum_to_target_tableau(tableau, tableau[pi], p=p, method=method)
 
 
 def _map_complete_basis_to_target(

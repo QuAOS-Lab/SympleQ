@@ -197,6 +197,7 @@ class Gate(ABC):
             input_tableau,
             target_tableau,
             p=int(dimension),
+            method="auto",
         )
         phase_vector = np.zeros(2 * n_qudits, dtype=int)
 
