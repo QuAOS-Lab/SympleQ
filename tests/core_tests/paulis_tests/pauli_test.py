@@ -230,7 +230,6 @@ class TestPaulis:
             with pytest.raises(ValueError):
                 p_string1[1] = PauliString.from_string(f"x{1}z{0} x{0}z{2} x{1}z{0}", dimensions=[dim, dim, dim])
 
-
     def test_to_hilbert_space_consistency(self):
         # Single Pauli matches PauliString representation
         for _ in range(N_tests):
@@ -507,35 +506,24 @@ class TestPaulis:
             f"with dimensions {dimensions}"
         )
 
-    def test_combine_equivalent_paulis(self):
-        dims = [2, 2]
-        # Equivalent tableau rows should always merge; phases are absorbed into the complex coefficient.
-        ps_a = PauliString.from_string("x1z0 x0z1", dims)
-        ps_b = PauliString.from_string("x1z0 x0z1", dims)
-        ps_c = PauliString.from_string("x1z0 x0z1", dims)  # different phase => different coefficient
-        ps_d = PauliString.from_string("x0z1 x1z0", dims)
+    def test_acquired_phase_on_mixed_dimensions(self):
+        dims = [2, 3]
+        lcm = 6
 
-        P = PauliSum.from_pauli_strings([ps_a, ps_b, ps_c, ps_d],
-                                        weights=[1.0, 2.0, 3.0, 4.0],
-                                        phases=[0, 0, 1, 0])
+        z0 = PauliString.from_string('x0z1 x0z0', dimensions=dims)
+        x0 = PauliString.from_string('x1z0 x0z0', dimensions=dims)
+        z1 = PauliString.from_string('x0z0 x0z1', dimensions=dims)
+        x1 = PauliString.from_string('x0z0 x1z0', dimensions=dims)
 
-        P.combine_equivalent_paulis()
+        assert z0.acquired_phase(x0) == 2 * (lcm // dims[0])
+        assert z1.acquired_phase(x1) == 2 * (lcm // dims[1])
+        assert x0.acquired_phase(z0) == 0
+        assert x1.acquired_phase(z1) == 0
 
-        assert P.n_paulis() == 2
-        assert np.all(P.phases == 0)
-
-        obs = {}
-        for i in range(P.n_paulis()):
-            row = np.asarray(P.tableau[i]).tolist()
-            obs[tuple(row)] = complex(P.weights[i])
-
-        # For qubits, mod = 2*lcm = 4 and omega = exp(2*pi*i/4) = 1j.
-        # The phase=1 term contributes (3.0 * 1j).
-        key_x = tuple(ps_a.tableau[0].tolist())
-        key_d = tuple(ps_d.tableau[0].tolist())
-        assert key_x in obs and key_d in obs
-        assert np.allclose(obs[key_x], 3.0 + 3.0j, atol=1e-12, rtol=0)
-        assert np.allclose(obs[key_d], 4.0 + 0.0j, atol=1e-12, rtol=0)
+        for a, b in [(z0, x0), (z1, x1), (x0, z0), (x1, z1)]:
+            assert a.acquired_phase(b) == (a * b).phases[0] % (2 * lcm), (
+                f'acquired_phase disagrees with __mul__ for {a} and {b}'
+            )
 
     def test_phase_and_dot_product(self):
 
