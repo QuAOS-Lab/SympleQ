@@ -103,8 +103,8 @@ N_QUBITS = 56
 # -------------------------------------------------------------------------
 # Set to None to use the defaults inherited from CrossingSettings.
 
-N_GATES_BOUNDS = (100, 2000)
-RATIO_BOUNDS = (0.1, 0.75)
+N_GATES_BOUNDS = (100, 5000)
+RATIO_BOUNDS = (0.1, 0.9)
 
 # -------------------------------------------------------------------------
 # HQC BUDGET HANDLES
