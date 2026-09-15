@@ -556,6 +556,76 @@ def save_real_checkpoint(
         print(f"[checkpoint] GP grid was not saved: {exc}")
 
 
+def save_final_actual_gates_artifacts(
+    *,
+    base_path: Path,
+    settings: FantasySettings,
+    device: torch.device,
+) -> None:
+    """Rewrite the completed run to actual gates and save its prediction grid."""
+
+    checkpoints = [
+        path
+        for path in base_path.parent.glob("measurement_*.json")
+        if "_actual_gates" not in path.stem
+    ]
+    if not checkpoints:
+        print("[final actual gates] skipped: no numbered measurement checkpoints")
+        return
+
+    source_checkpoint = max(
+        checkpoints,
+        key=lambda path: (measurement_checkpoint_step(path), path.stat().st_mtime_ns),
+    )
+    actual_json_path = base_path.with_name(f"{base_path.stem}_actual_gates.json")
+
+    from sympleq.applications.randomized_benchmarking.experiments.GP_Levelset_estimation.rewrite_fle_2d_actual_gates import (
+        rewrite_to_actual_gates,
+    )
+
+    print(f"[final actual gates] source checkpoint: {source_checkpoint}")
+    actual_json_path = rewrite_to_actual_gates(
+        source_checkpoint,
+        output_json=actual_json_path,
+    )
+
+    if not settings.save_gp_prediction_grid:
+        return
+
+    actual_strategy = build_strategy(settings)
+    actual_observations: list[Observation] = []
+    actual_results_for_plot: list[tuple[float, float, int]] = []
+    seed_fake_corners(
+        actual_strategy,
+        settings,
+        actual_observations,
+        actual_results_for_plot,
+        device=device,
+    )
+    recovered = recover_observations_from_json(
+        actual_json_path,
+        strategy=actual_strategy,
+        rmb=RMB.noiseless(),
+        observations=actual_observations,
+        results_for_plot=actual_results_for_plot,
+        device=device,
+    )
+    print(f"[final actual gates] replayed real observations: {recovered}")
+
+    prediction_strategy = refreshed_strategy_for_prediction(
+        actual_strategy,
+        settings,
+        actual_observations,
+        device=device,
+    )
+    save_gp_prediction_grid(
+        prediction_strategy,
+        settings,
+        device=device,
+        json_path=actual_json_path,
+    )
+
+
 def print_run_handles(
     settings: FantasySettings,
     *,
@@ -922,6 +992,16 @@ def run(
             device=gp_device,
             json_path=base_path,
         )
+
+    if base_path is not None:
+        try:
+            save_final_actual_gates_artifacts(
+                base_path=base_path,
+                settings=settings,
+                device=gp_device,
+            )
+        except Exception as exc:
+            print(f"[final actual gates] rewrite/grid skipped: {exc}")
 
     if return_budget:
         return rmb, crossings, budget
