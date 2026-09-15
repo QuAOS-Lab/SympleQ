@@ -11,7 +11,8 @@ from sympleq.applications.randomized_benchmarking.experiments.common import (
     quantinuum_emulator_backend_factory,
     quantinuum_H2_backend_factory,
     dephasing_sympleq_backend_factory,
-    depol_sympleq_backend_factory
+    depol_sympleq_backend_factory,
+    mixed_sympleq_backend_factory
 )
 
 
@@ -176,7 +177,7 @@ FORCE_DEFAULT_DEVICE_DURING_AEPSYCH = True
 # BACKEND HANDLE
 # -------------------------------------------------------------------------
 
-BACKEND_FACTORY = depol_sympleq_backend_factory
+BACKEND_FACTORY = mixed_sympleq_backend_factory
 # BACKEND_FACTORY = dephasing_sympleq_backend_factory
 
 # -------------------------------------------------------------------------

@@ -39,6 +39,34 @@ from sympleq.core.noise.noise_model import DephasingNoise, GenericNoise
 ONE_Q_DEPHASING = 0.000025
 TWO_Q_DEPHASING = 0.00079
 
+
+def mixed_sympleq_backend_factory(settings, rng):
+
+    alpha = 1 / 2
+
+    noise_model = GenericNoise.from_paulis(
+        [
+            (1 - alpha) * ONE_Q_NOISE / 3,
+            (1 - alpha) * ONE_Q_NOISE / 3,
+            alpha * ONE_Q_NOISE + (1 - alpha) * ONE_Q_NOISE / 3,
+        ],
+        rng
+    )
+
+    two_qubit_noise_model = GenericNoise.from_paulis(
+        [
+            (1 - alpha) * TWO_Q_NOISE / 3,
+            (1 - alpha) * TWO_Q_NOISE / 3,
+            alpha * TWO_Q_NOISE + (1 - alpha) * TWO_Q_NOISE / 3,
+        ],
+        rng
+    )
+
+    return SympleqBackend(
+        noise_model=noise_model,
+        two_qubit_noise_model=two_qubit_noise_model,
+    )
+
 def dephasing_sympleq_backend_factory(settings, rng):
     return SympleqBackend(
         noise_model=DephasingNoise(ONE_Q_DEPHASING, rng),
