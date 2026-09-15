@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import json
 from pathlib import Path
 
@@ -15,6 +16,12 @@ OUT_PATH_WITH_FAKE_H = Path(
 )
 OUT_PATH_WITHOUT_FAKE_H = Path(
     r"Personal\Data\Paper_plots\plot_2\plot2_q56_without_fake_h.png"
+)
+OUT_CSV_WITH_FAKE_H = OUT_PATH_WITH_FAKE_H.with_name(
+    "plot2_q56_with_fake_h_h2_1_contour.csv"
+)
+OUT_CSV_WITHOUT_FAKE_H = OUT_PATH_WITHOUT_FAKE_H.with_name(
+    "plot2_q56_without_fake_h_h2_1_contour.csv"
 )
 
 Q56_FAKE_H_JSON_PATH = Path(
@@ -80,6 +87,25 @@ def load_points(json_path: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray, np
     )
 
 
+def save_contour_csv(contour, output_path: Path, *, target: float) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(
+            [
+                "segment",
+                "point_index",
+                "two_qubit_gate_ratio",
+                "total_gates",
+                "target_probability",
+            ]
+        )
+        for segment_index, vertices in enumerate(contour.allsegs[0]):
+            for point_index, (ratio, gates) in enumerate(vertices):
+                writer.writerow([segment_index, point_index, ratio, gates, target])
+    print(f"[saved] H2-1 contour: {output_path}")
+
+
 def plot_panel(
     fig,
     ax,
@@ -88,6 +114,7 @@ def plot_panel(
     grid_path: Path,
     title: str,
     show_points: bool,
+    contour_csv_path: Path,
 ) -> None:
     grid = np.load(grid_path)
     ratio_grid = np.asarray(grid["ratio_grid"], dtype=float)
@@ -135,7 +162,7 @@ def plot_panel(
                 label=r"H2-1 $\mu \pm 1\sigma$",
             )
 
-    ax.contour(
+    mean_contour = ax.contour(
         ratio_grid,
         gates_grid,
         latent_mean,
@@ -145,6 +172,7 @@ def plot_panel(
         linewidths=2.2,
         zorder=6,
     )
+    save_contour_csv(mean_contour, contour_csv_path, target=target)
     ax.plot(
         [],
         [],
@@ -196,6 +224,7 @@ def main() -> None:
         grid_path=Q56_FAKE_H_GRID_PATH,
         title="With Fake Hadamard",
         show_points=SHOW_DATA_POINTS_WITH_FAKE_H,
+        contour_csv_path=OUT_CSV_WITH_FAKE_H,
     )
     ax.set_ylabel("Total gates")
     fig.tight_layout()
@@ -211,6 +240,7 @@ def main() -> None:
         grid_path=Q56_ORDINARY_GRID_PATH,
         title="Without Fake Hadamard",
         show_points=SHOW_DATA_POINTS_WITHOUT_FAKE_H,
+        contour_csv_path=OUT_CSV_WITHOUT_FAKE_H,
     )
     ax.set_ylabel("Total gates")
     fig.tight_layout()

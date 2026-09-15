@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import json
 from pathlib import Path
 
@@ -15,6 +16,12 @@ OUT_PATH_WITH_FAKE_H = Path(
 )
 OUT_PATH_WITHOUT_FAKE_H = Path(
     r"Personal\Data\Paper_plots\plot_2\plot2_q26_without_fake_h.png"
+)
+OUT_CSV_WITH_FAKE_H = OUT_PATH_WITH_FAKE_H.with_name(
+    "plot2_q26_with_fake_h_h2_1_contour.csv"
+)
+OUT_CSV_WITHOUT_FAKE_H = OUT_PATH_WITHOUT_FAKE_H.with_name(
+    "plot2_q26_without_fake_h_h2_1_contour.csv"
 )
 
 # With Fake Hadamard
@@ -50,11 +57,11 @@ Q26_H21_GRID_PATH = Path(
 )
 Q26_H21E_JSON_PATH = Path(
     r"Personal\FLE\H2_1E\q26\seed_72\FLE_20260827_120009"
-    r"\measurement_012_globalsur_20260829_170736_456309.json"
+    r"\reconstructed_native_gateset_measurement_012_globalsur_20260829_170736_456309_actual_gates.json"
 )
 Q26_H21E_GRID_PATH = Path(
     r"Personal\FLE\H2_1E\q26\seed_72\FLE_20260827_120009"
-    r"\measurement_012_globalsur_20260829_170736_456309_gp_grid.npz"
+    r"\reconstructed_native_gateset_measurement_012_globalsur_20260829_170736_456309_actual_gates_gp_grid.npz"
 )
 Q26_H22_JSON_PATH = Path(
     r"Personal\Data\accumulated\H2-2"
@@ -122,6 +129,25 @@ def load_points(json_path: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray, np
     )
 
 
+def save_contour_csv(contour, output_path: Path, *, target: float) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(
+            [
+                "segment",
+                "point_index",
+                "two_qubit_gate_ratio",
+                "total_gates",
+                "target_probability",
+            ]
+        )
+        for segment_index, vertices in enumerate(contour.allsegs[0]):
+            for point_index, (ratio, gates) in enumerate(vertices):
+                writer.writerow([segment_index, point_index, ratio, gates, target])
+    print(f"[saved] H2-1 contour: {output_path}")
+
+
 def add_dataset(fig, ax, dataset: dict, *, show_hue: bool) -> None:
     grid_path = Path(dataset["grid"])
     with np.load(grid_path) as grid:
@@ -138,6 +164,7 @@ def add_dataset(fig, ax, dataset: dict, *, show_hue: bool) -> None:
     color = str(dataset["color"])
     linestyle = str(dataset["linestyle"])
     label = str(dataset["label"])
+    sigma = float(dataset.get("sigma", 1.0))
     print(f"[plot] {label}: {grid_path}")
     print(f"[plot] {label} contour target: p={target:g}")
 
@@ -153,7 +180,7 @@ def add_dataset(fig, ax, dataset: dict, *, show_hue: bool) -> None:
         fig.colorbar(surface, ax=ax, label="Predicted fidelity")
 
     if SHOW_UNCERTAINTY:
-        band = np.abs(latent_mean - latent_target) - latent_std
+        band = np.abs(latent_mean - latent_target) - sigma * latent_std
         finite_band = band[np.isfinite(band)]
         if finite_band.size and float(np.min(finite_band)) < 0.0:
             ax.contourf(
@@ -171,10 +198,35 @@ def add_dataset(fig, ax, dataset: dict, *, show_hue: bool) -> None:
                 color=color,
                 linewidth=8.0,
                 alpha=SIGMA_ALPHA,
-                label=rf"{label} $\mu \pm 1\sigma$",
+                label=rf"{label} $\mu \pm {sigma:g}\sigma$",
             )
 
-    ax.contour(
+        if bool(dataset.get("show_sigma_contours", False)):
+            sigma_contours = (
+                (latent_mean - sigma * latent_std, ":", rf"$\mu-{sigma:g}\sigma$"),
+                (latent_mean + sigma * latent_std, "--", rf"$\mu+{sigma:g}\sigma$"),
+            )
+            for values, boundary_style, boundary_label in sigma_contours:
+                ax.contour(
+                    ratio_grid,
+                    gates_grid,
+                    values,
+                    levels=[latent_target],
+                    colors=color,
+                    linestyles=boundary_style,
+                    linewidths=1.4,
+                    zorder=5,
+                )
+                ax.plot(
+                    [],
+                    [],
+                    color=color,
+                    linestyle=boundary_style,
+                    linewidth=1.4,
+                    label=rf"{label} {boundary_label}=p{target:g}",
+                )
+
+    mean_contour = ax.contour(
         ratio_grid,
         gates_grid,
         latent_mean,
@@ -184,6 +236,9 @@ def add_dataset(fig, ax, dataset: dict, *, show_hue: bool) -> None:
         linewidths=2.2,
         zorder=6,
     )
+    contour_csv = dataset.get("contour_csv")
+    if contour_csv is not None:
+        save_contour_csv(mean_contour, Path(contour_csv), target=target)
     ax.plot(
         [],
         [],
@@ -252,6 +307,7 @@ def main() -> None:
             "grid": Q26_FAKE_H_H21_GRID_PATH,
             "color": "navy",
             "linestyle": "-",
+            "contour_csv": OUT_CSV_WITH_FAKE_H,
             "show_points": SHOW_POINTS_FAKE_H_H21,
         },
         {
@@ -270,6 +326,9 @@ def main() -> None:
             "grid": Q26_H21_GRID_PATH,
             "color": "navy",
             "linestyle": "-",
+            "sigma": 1.0,
+            "show_sigma_contours": True,
+            "contour_csv": OUT_CSV_WITHOUT_FAKE_H,
             "show_points": SHOW_POINTS_H21,
         },
         {
