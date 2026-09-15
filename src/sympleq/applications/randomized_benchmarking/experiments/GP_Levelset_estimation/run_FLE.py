@@ -605,7 +605,7 @@ def save_final_actual_gates_artifacts(
     recovered = recover_observations_from_json(
         actual_json_path,
         strategy=actual_strategy,
-        rmb=RMB.noiseless(),
+        rmb=RMB.default(),
         observations=actual_observations,
         results_for_plot=actual_results_for_plot,
         device=device,

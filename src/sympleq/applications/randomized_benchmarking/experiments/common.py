@@ -34,7 +34,7 @@ from sympleq.integrations.quantinuum.utils import (
 
 
 from sympleq.applications.randomized_benchmarking.backends.sympleq import SympleqBackend
-from sympleq.core.noise.noise_model import DephasingNoise
+from sympleq.core.noise.noise_model import DephasingNoise, GenericNoise
 
 ONE_Q_DEPHASING = 0.000167
 TWO_Q_DEPHASING = 0.00245
@@ -45,6 +45,14 @@ def dephasing_sympleq_backend_factory(settings, rng):
         two_qubit_noise_model=DephasingNoise(TWO_Q_DEPHASING, rng),
     )
 
+
+def depol_sympleq_backend_factory(settings, rng):
+    noise_model = GenericNoise.from_paulis([ONE_Q_DEPHASING, ONE_Q_DEPHASING, ONE_Q_DEPHASING], rng)
+    two_qubit_noise_model = GenericNoise.from_paulis([TWO_Q_DEPHASING, TWO_Q_DEPHASING, TWO_Q_DEPHASING], rng)
+    return SympleqBackend(
+        noise_model=noise_model,
+        two_qubit_noise_model=two_qubit_noise_model,
+    )
 
 def default_backend_factory(settings: CrossingSettings, rng: RNGGenerator) -> RMBBackend:
     """SympleQ emulation of Quantinuum hardware; nothing is submitted."""
