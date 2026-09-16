@@ -40,9 +40,9 @@ ONE_Q_NOISE = 0.000025
 TWO_Q_NOISE = 0.00079
 
 
-def mixed_sympleq_backend_factory(settings, rng):
+def mixed_sympleq_backend_factory(settings, rng, alpha=0.5):
 
-    alpha = 1 / 2
+    # alpha = 1 / 2
 
     noise_model = GenericNoise.from_paulis(
         [
