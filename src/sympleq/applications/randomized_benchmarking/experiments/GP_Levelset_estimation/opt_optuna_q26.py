@@ -49,7 +49,7 @@ def main():
         writer = csv.writer(handle)
         writer.writerow([
             "trial", "one_q_multiplier", "two_q_multiplier", "q26_contour",
-            "q26_shape_mse", "q26_slope_mse", "q26_minimum_loss",
+            "q26_vertical_mse", "q26_shape_mse", "q26_slope_mse", "q26_minimum_loss",
             "q26_rmin_ref", "q26_rmin_test", "q26_total_loss",
         ])
 
@@ -63,7 +63,8 @@ def main():
             save_contour_plot(reference_points, segments, grid_path, REFERENCE_GRID,
                               plot_path, 26, one_q, two_q)
             losses = contour_losses(reference_points, max(segments, key=len)) if segments else {
-                "shape_mse": float("nan"), "slope_mse": float("nan"),
+                "vertical_mse": float("nan"), "shape_mse": float("nan"),
+                "slope_mse": float("nan"),
                 "minimum_loss": float("nan"), "rmin_ref": float("nan"),
                 "rmin_test": float("nan"), "total_loss": 1.0e9,
             }
@@ -72,7 +73,7 @@ def main():
             writer.writerow([
                 trial.number, one_q, two_q, json.dumps(segments),
                 *(losses[name] for name in (
-                    "shape_mse", "slope_mse", "minimum_loss",
+                    "vertical_mse", "shape_mse", "slope_mse", "minimum_loss",
                     "rmin_ref", "rmin_test", "total_loss",
                 )),
             ])

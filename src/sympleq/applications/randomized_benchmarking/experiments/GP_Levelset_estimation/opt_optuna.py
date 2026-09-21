@@ -139,7 +139,7 @@ def prepare_line(data):
 
 
 # -------------------------------------------------------------------------
-# Calculate the three shape losses
+# Calculate the contour losses
 # -------------------------------------------------------------------------
 
 def contour_losses(ref_data, test_data, n_points=200):
@@ -153,6 +153,7 @@ def contour_losses(ref_data, test_data, n_points=200):
 
     if xmin >= xmax:
         return {
+            "vertical_mse": float("nan"),
             "shape_mse": float("nan"),
             "slope_mse": float("nan"),
             "minimum_loss": float("nan"),
@@ -199,6 +200,7 @@ def contour_losses(ref_data, test_data, n_points=200):
 
     if ref_std == 0.0 or test_std == 0.0:
         return {
+            "vertical_mse": float("nan"),
             "shape_mse": float("nan"),
             "slope_mse": float("nan"),
             "minimum_loss": float("nan"),
@@ -262,17 +264,23 @@ def contour_losses(ref_data, test_data, n_points=200):
         rmin_ref - rmin_test
     ) ** 2
 
+    vertical_mse = np.mean(
+        (log_ref - log_test) ** 2
+    )
+
     # ------------------------------------------------------------------
     # Total shape-driven objective
     # ------------------------------------------------------------------
 
     total_loss = (
-        shape_mse
+        vertical_mse
+        + shape_mse
         + LAMBDA_SLOPE * slope_mse
         + LAMBDA_MINIMUM * minimum_loss
     )
 
     return {
+        "vertical_mse": float(vertical_mse),
         "shape_mse": float(shape_mse),
         "slope_mse": float(slope_mse),
         "minimum_loss": float(minimum_loss),
@@ -433,7 +441,7 @@ def main():
                 "one_q_multiplier",
                 "two_q_multiplier",
                 *[f"q{q}_{name}" for q in (56,) for name in (
-                    "contour", "shape_mse", "slope_mse", "minimum_loss",
+                    "contour", "vertical_mse", "shape_mse", "slope_mse", "minimum_loss",
                     "rmin_ref", "rmin_test", "total_loss",
                 )],
             ]
@@ -475,7 +483,8 @@ def main():
                 one_q_multiplier, two_q_multiplier,
             )
             losses = contour_losses(references[q], max(segments, key=len)) if segments else {
-                "shape_mse": float("nan"), "slope_mse": float("nan"),
+                "vertical_mse": float("nan"), "shape_mse": float("nan"),
+                "slope_mse": float("nan"),
                 "minimum_loss": float("nan"), "rmin_ref": float("nan"),
                 "rmin_test": float("nan"), "total_loss": 1.0e9,
             }
@@ -488,7 +497,7 @@ def main():
                 trial.number, one_q_multiplier, two_q_multiplier,
                 json.dumps(segments),
                 *(losses[name] for name in (
-                    "shape_mse", "slope_mse", "minimum_loss",
+                    "vertical_mse", "shape_mse", "slope_mse", "minimum_loss",
                     "rmin_ref", "rmin_test", "total_loss",
                 )),
             ])

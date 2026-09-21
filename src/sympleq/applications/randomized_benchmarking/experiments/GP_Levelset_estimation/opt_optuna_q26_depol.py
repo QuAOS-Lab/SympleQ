@@ -235,7 +235,8 @@ def run_sweep(n_qubits):
         writer = csv.writer(handle)
         writer.writerow([
             "trial", "one_q_multiplier", "two_q_multiplier",
-            f"q{n_qubits}_contour", f"q{n_qubits}_shape_mse",
+            f"q{n_qubits}_contour", f"q{n_qubits}_vertical_mse",
+            f"q{n_qubits}_shape_mse",
             f"q{n_qubits}_slope_mse", f"q{n_qubits}_minimum_loss",
             f"q{n_qubits}_rmin_ref", f"q{n_qubits}_rmin_test",
             f"q{n_qubits}_total_loss",
@@ -253,16 +254,17 @@ def run_sweep(n_qubits):
             save_plot(reference_points, segments, grid_path, paths["reference_grid"],
                       plot_path, n_qubits, one_q, two_q)
             losses = contour_losses(reference_points, max(segments, key=len)) if segments else {
-                "shape_mse": float("nan"), "slope_mse": float("nan"),
-                "minimum_loss": float("nan"), "rmin_ref": float("nan"),
-                "rmin_test": float("nan"), "total_loss": 1.0e9,
+                "vertical_mse": float("nan"), "shape_mse": float("nan"),
+                "slope_mse": float("nan"), "minimum_loss": float("nan"),
+                "rmin_ref": float("nan"), "rmin_test": float("nan"),
+                "total_loss": 1.0e9,
             }
             if not np.isfinite(losses["total_loss"]):
                 losses["total_loss"] = 1.0e9
             writer.writerow([
                 trial.number, one_q, two_q, json.dumps(segments),
                 *(losses[name] for name in (
-                    "shape_mse", "slope_mse", "minimum_loss",
+                    "vertical_mse", "shape_mse", "slope_mse", "minimum_loss",
                     "rmin_ref", "rmin_test", "total_loss",
                 )),
             ])
