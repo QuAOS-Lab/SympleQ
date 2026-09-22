@@ -40,22 +40,27 @@ ONE_Q_NOISE = 0.000025
 TWO_Q_NOISE = 0.00079
 
 
-def mixed_sympleq_backend_factory(settings, rng, alpha_1q=0.5, alpha_2q=0.5):
+def mixed_sympleq_backend_factory(settings, rng,
+                                  alpha_1q_depol=0.5,
+                                  alpha_1q_dephase=0.5,
+                                  alpha_2q_depol=0.5,
+                                  alpha_2q_dephase=0.5
+                                  ):
 
     noise_model = GenericNoise.from_paulis(
         [
-            ONE_Q_NOISE / 3,
-            ONE_Q_NOISE / 3,
-            alpha_1q * ONE_Q_NOISE + ONE_Q_NOISE / 3,
+            alpha_1q_depol * ONE_Q_NOISE / 3,
+            alpha_1q_depol * ONE_Q_NOISE / 3,
+            alpha_1q_dephase * ONE_Q_NOISE + alpha_1q_depol *ONE_Q_NOISE / 3,
         ],
         rng
     )
 
     two_qubit_noise_model = GenericNoise.from_paulis(
         [
-            TWO_Q_NOISE / 3,
-            TWO_Q_NOISE / 3,
-            alpha_2q * TWO_Q_NOISE + TWO_Q_NOISE / 3,
+            alpha_2q_depol * TWO_Q_NOISE / 3,
+            alpha_2q_depol *TWO_Q_NOISE / 3,
+            alpha_2q_dephase * TWO_Q_NOISE + alpha_2q_depol * TWO_Q_NOISE / 3,
         ],
         rng
     )
