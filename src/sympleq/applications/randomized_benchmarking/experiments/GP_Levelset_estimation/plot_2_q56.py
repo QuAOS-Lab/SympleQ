@@ -23,6 +23,10 @@ OUT_CSV_WITH_FAKE_H = OUT_PATH_WITH_FAKE_H.with_name(
 OUT_CSV_WITHOUT_FAKE_H = OUT_PATH_WITHOUT_FAKE_H.with_name(
     "plot2_q56_without_fake_h_h2_1_contour.csv"
 )
+SYMPLEQ_CONTOUR_PATH = Path(
+    r"Personal\Data\accumulated\Sympleq\Optuna3d\trial_0123"
+    r"\qubitwise_contours_noise.csv"
+)
 
 Q56_FAKE_H_JSON_PATH = Path(
     r"Personal\FLE\H_wrapper\H2_1\q56\seed_42\FLE_H_wrapper_20260825_160151"
@@ -106,6 +110,52 @@ def save_contour_csv(contour, output_path: Path, *, target: float) -> None:
     print(f"[saved] H2-1 contour: {output_path}")
 
 
+def load_saved_contour(qubit: float, sigma_level: float) -> np.ndarray:
+    with SYMPLEQ_CONTOUR_PATH.open("r", newline="", encoding="utf-8") as handle:
+        for row in csv.DictReader(handle):
+            if np.isclose(float(row["qubit"]), qubit) and np.isclose(
+                float(row["sigma_level"]), sigma_level
+            ):
+                values = np.fromstring(
+                    row["contour"]
+                    .replace("[", " ")
+                    .replace("]", " ")
+                    .replace("\n", " "),
+                    sep=" ",
+                )
+                return values.reshape(-1, 2)
+    raise ValueError(f"No SympleQ contour for q={qubit}, sigma={sigma_level}")
+
+
+def add_sympleq_contours(ax, qubit: float) -> None:
+    mean = load_saved_contour(qubit, 0.0)
+    minus = load_saved_contour(qubit, -2.0)
+    plus = load_saved_contour(qubit, 2.0)
+    mean = mean[np.argsort(mean[:, 0])]
+    minus = minus[np.argsort(minus[:, 0])]
+    plus = plus[np.argsort(plus[:, 0])]
+    color = "dodgerblue"
+
+    ax.fill(
+        np.r_[minus[:, 0], plus[::-1, 0]],
+        10.0 ** np.r_[minus[:, 1], plus[::-1, 1]],
+        color=color,
+        alpha=SIGMA_ALPHA,
+        linewidth=0.0,
+        zorder=3,
+        label=r"SympleQ $\mu \pm 2\sigma$",
+    )
+    ax.plot(
+        mean[:, 0],
+        10.0 ** mean[:, 1],
+        color=color,
+        linestyle="-.",
+        linewidth=2.2,
+        label="SympleQ GP mean p=0.5",
+        zorder=7,
+    )
+
+
 def plot_panel(
     fig,
     ax,
@@ -141,7 +191,7 @@ def plot_panel(
         fig.colorbar(surface, ax=ax, label="Predicted fidelity")
 
     if SHOW_UNCERTAINTY:
-        band = np.abs(latent_mean - latent_target) - latent_std
+        band = np.abs(latent_mean - latent_target) - 2.0 * latent_std
         finite_band = band[np.isfinite(band)]
         if finite_band.size and float(np.min(finite_band)) < 0.0:
             ax.contourf(
@@ -159,7 +209,7 @@ def plot_panel(
                 color=H2_1_COLOR,
                 linewidth=8.0,
                 alpha=SIGMA_ALPHA,
-                label=r"H2-1 $\mu \pm 1\sigma$",
+                label=r"H2-1 $\mu \pm 2\sigma$",
             )
 
     mean_contour = ax.contour(
@@ -242,6 +292,8 @@ def main() -> None:
         show_points=SHOW_DATA_POINTS_WITHOUT_FAKE_H,
         contour_csv_path=OUT_CSV_WITHOUT_FAKE_H,
     )
+    add_sympleq_contours(ax, 56.0)
+    ax.legend(loc="upper right", fontsize=8, frameon=True, framealpha=0.9)
     ax.set_ylabel("Total gates")
     fig.tight_layout()
     OUT_PATH_WITHOUT_FAKE_H.parent.mkdir(parents=True, exist_ok=True)

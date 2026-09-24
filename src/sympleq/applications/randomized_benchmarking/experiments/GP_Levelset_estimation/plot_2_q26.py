@@ -23,6 +23,10 @@ OUT_CSV_WITH_FAKE_H = OUT_PATH_WITH_FAKE_H.with_name(
 OUT_CSV_WITHOUT_FAKE_H = OUT_PATH_WITHOUT_FAKE_H.with_name(
     "plot2_q26_without_fake_h_h2_1_contour.csv"
 )
+SYMPLEQ_CONTOUR_PATH = Path(
+    r"Personal\Data\accumulated\Sympleq\Optuna3d\trial_0123"
+    r"\qubitwise_contours_noise.csv"
+)
 
 # With Fake Hadamard
 Q26_FAKE_H_H21_JSON_PATH = Path(
@@ -148,6 +152,52 @@ def save_contour_csv(contour, output_path: Path, *, target: float) -> None:
     print(f"[saved] H2-1 contour: {output_path}")
 
 
+def load_saved_contour(qubit: float, sigma_level: float) -> np.ndarray:
+    with SYMPLEQ_CONTOUR_PATH.open("r", newline="", encoding="utf-8") as handle:
+        for row in csv.DictReader(handle):
+            if np.isclose(float(row["qubit"]), qubit) and np.isclose(
+                float(row["sigma_level"]), sigma_level
+            ):
+                values = np.fromstring(
+                    row["contour"]
+                    .replace("[", " ")
+                    .replace("]", " ")
+                    .replace("\n", " "),
+                    sep=" ",
+                )
+                return values.reshape(-1, 2)
+    raise ValueError(f"No SympleQ contour for q={qubit}, sigma={sigma_level}")
+
+
+def add_sympleq_contours(ax, qubit: float) -> None:
+    mean = load_saved_contour(qubit, 0.0)
+    minus = load_saved_contour(qubit, -2.0)
+    plus = load_saved_contour(qubit, 2.0)
+    mean = mean[np.argsort(mean[:, 0])]
+    minus = minus[np.argsort(minus[:, 0])]
+    plus = plus[np.argsort(plus[:, 0])]
+    color = "dodgerblue"
+
+    ax.fill(
+        np.r_[minus[:, 0], plus[::-1, 0]],
+        10.0 ** np.r_[minus[:, 1], plus[::-1, 1]],
+        color=color,
+        alpha=SIGMA_ALPHA,
+        linewidth=0.0,
+        zorder=3,
+        label=r"SympleQ $\mu \pm 2\sigma$",
+    )
+    ax.plot(
+        mean[:, 0],
+        10.0 ** mean[:, 1],
+        color=color,
+        linestyle="-.",
+        linewidth=2.2,
+        label="SympleQ GP mean p=0.5",
+        zorder=7,
+    )
+
+
 def add_dataset(fig, ax, dataset: dict, *, show_hue: bool) -> None:
     grid_path = Path(dataset["grid"])
     with np.load(grid_path) as grid:
@@ -164,7 +214,7 @@ def add_dataset(fig, ax, dataset: dict, *, show_hue: bool) -> None:
     color = str(dataset["color"])
     linestyle = str(dataset["linestyle"])
     label = str(dataset["label"])
-    sigma = float(dataset.get("sigma", 1.0))
+    sigma = float(dataset.get("sigma", 2.0))
     print(f"[plot] {label}: {grid_path}")
     print(f"[plot] {label} contour target: p={target:g}")
 
@@ -276,7 +326,13 @@ def add_dataset(fig, ax, dataset: dict, *, show_hue: bool) -> None:
         ax.plot([], [], color="none", label=f"{label} data: {observations} obs")
 
 
-def make_plot(datasets: tuple[dict, ...], *, title: str, output_path: Path) -> None:
+def make_plot(
+    datasets: tuple[dict, ...],
+    *,
+    title: str,
+    output_path: Path,
+    sympleq_qubit: float | None = None,
+) -> None:
     fig, ax = plt.subplots(1, 1, figsize=(8.0, 5.6))
     for index, dataset in enumerate(datasets):
         add_dataset(
@@ -285,6 +341,8 @@ def make_plot(datasets: tuple[dict, ...], *, title: str, output_path: Path) -> N
             dataset,
             show_hue=SHOW_PREDICTED_FIDELITY_HUE and index == 0,
         )
+    if sympleq_qubit is not None:
+        add_sympleq_contours(ax, sympleq_qubit)
 
     ax.set_yscale("log")
     ax.set_xlim(*RATIO_AXIS_LIMITS)
@@ -326,8 +384,7 @@ def main() -> None:
             "grid": Q26_H21_GRID_PATH,
             "color": "navy",
             "linestyle": "-",
-            "sigma": 1.0,
-            "show_sigma_contours": True,
+            "sigma": 2.0,
             "contour_csv": OUT_CSV_WITHOUT_FAKE_H,
             "show_points": SHOW_POINTS_H21,
         },
@@ -366,6 +423,7 @@ def main() -> None:
         without_fake_h,
         title="Without Fake Hadamard",
         output_path=OUT_PATH_WITHOUT_FAKE_H,
+        sympleq_qubit=26.0,
     )
     plt.show()
 
