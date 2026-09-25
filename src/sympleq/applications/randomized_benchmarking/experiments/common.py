@@ -36,8 +36,8 @@ from sympleq.integrations.quantinuum.utils import (
 from sympleq.applications.randomized_benchmarking.backends.sympleq import SympleqBackend
 from sympleq.core.noise.noise_model import DephasingNoise, GenericNoise
 
-ONE_Q_NOISE = 0.000025
-TWO_Q_NOISE = 0.00079
+ONE_Q_NOISE = 2.843e-4
+TWO_Q_NOISE = 8.30e-4
 
 
 def mixed_sympleq_backend_factory(settings, rng,
