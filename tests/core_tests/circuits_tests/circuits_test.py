@@ -642,6 +642,17 @@ class TestCircuits():
             assert g1 is g2
         assert list(c1.qudit_indices) == list(c2.qudit_indices)
 
+    def test_n_x_qudit_gates(self):
+        """Test that the number of one and two qudit gates is correctly counted.
+        Note that the only non-one and non-two qudit gates are the Pauli phase corrections that in principle are one
+        qubit gates, though our PauliGate can act on multiple qudits as well, say XXXX for four qudits."""
+        for _ in range(10):
+            c = Circuit.from_random_symplectic(np.array([2, 2, 2, 3, 3, 5]))
+            n_1qg = c.n_one_qudit_gates()
+            n_2qg = c.n_two_qudit_gates()
+            assert n_1qg == sum(gate.n_qudits == 1 for gate in c.gates)
+            assert n_2qg == sum(gate.n_qudits == 2 for gate in c.gates)
+
 
 class TestCircuitLayers():
 

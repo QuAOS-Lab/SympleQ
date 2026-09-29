@@ -805,15 +805,15 @@ class Circuit:
         """
         return len(self.gates)
 
-    def n_1qd_gates(self) -> int:
+    def n_one_qudit_gates(self) -> int:
         """
-        Returns the number of 1-qubit gates in the circuit.
+        Returns the number of 1-qudit gates in the circuit.
         """
         return len([g for g in self.gates if g.n_qudits == 1])
 
-    def n_2qd_gates(self) -> int:
+    def n_two_qudit_gates(self) -> int:
         """
-        Returns the number of 2-qubit gates in the circuit.
+        Returns the number of 2-qudit gates in the circuit.
         """
         return len([g for g in self.gates if g.n_qudits == 2])
 
