@@ -10,7 +10,7 @@ from sympleq.applications.randomized_benchmarking.experiments.common import (
     default_backend_factory,
     quantinuum_emulator_backend_factory,
     quantinuum_H2_backend_factory_Hwrap,
-    dephasing_sympleq_backend_factory,
+    mixed_sympleq_backend_factory,
 )
 from sympleq.applications.randomized_benchmarking.experiments.GP_Levelset_estimation.H_wrapper.h_wrapper_config import (
     H_WRAPPER_1Q_GATES_PER_QUBIT,
@@ -173,7 +173,7 @@ SAVE_REAL_CHECKPOINTS = True
 # RECOVERY HANDLES
 # -------------------------------------------------------------------------
 
-RECOVERY_MODE = True
+RECOVERY_MODE = False
 RECOVERY_FOLDER = Path(
     r"Personal\FLE\H_wrapper\H2_1\q26\seed_42\FLE_H_wrapper_20260827_151619"
 )
@@ -210,8 +210,8 @@ FORCE_DEFAULT_DEVICE_DURING_AEPSYCH = True
 
 # BACKEND_FACTORY = default_backend_factory
 # BACKEND_FACTORY = quantinuum_emulator_backend_factory
-BACKEND_FACTORY = quantinuum_H2_backend_factory_Hwrap
-# BACKEND_FACTORY = dephasing_sympleq_backend_factory
+# BACKEND_FACTORY = quantinuum_H2_backend_factory_Hwrap
+BACKEND_FACTORY = mixed_sympleq_backend_factory
 
 # -------------------------------------------------------------------------
 # REPRODUCIBILITY / DEBUG HANDLES

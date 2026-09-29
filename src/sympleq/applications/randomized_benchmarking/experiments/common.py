@@ -36,15 +36,15 @@ from sympleq.integrations.quantinuum.utils import (
 from sympleq.applications.randomized_benchmarking.backends.sympleq import SympleqBackend
 from sympleq.core.noise.noise_model import DephasingNoise, GenericNoise
 
-ONE_Q_NOISE = 2.843e-4
-TWO_Q_NOISE = 8.30e-4
+ONE_Q_NOISE = 1.9e-4
+TWO_Q_NOISE = 1.10e-3
 
 
 def mixed_sympleq_backend_factory(settings, rng,
-                                  alpha_1q_depol=0.5,
-                                  alpha_1q_dephase=0.5,
-                                  alpha_2q_depol=0.5,
-                                  alpha_2q_dephase=0.5
+                                  alpha_1q_depol=0.5599,
+                                  alpha_1q_dephase=5.7209,
+                                  alpha_2q_depol=0.8694,
+                                  alpha_2q_dephase=1.5278
                                   ):
 
     noise_model = GenericNoise.from_paulis(
@@ -59,7 +59,7 @@ def mixed_sympleq_backend_factory(settings, rng,
     two_qubit_noise_model = GenericNoise.from_paulis(
         [
             alpha_2q_depol * TWO_Q_NOISE / 3,
-            alpha_2q_depol *TWO_Q_NOISE / 3,
+            alpha_2q_depol * TWO_Q_NOISE / 3,
             alpha_2q_dephase * TWO_Q_NOISE + alpha_2q_depol * TWO_Q_NOISE / 3,
         ],
         rng
