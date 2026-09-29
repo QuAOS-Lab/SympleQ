@@ -729,6 +729,20 @@ class TestCircuitLayers():
         with pytest.raises(ValueError):
             c.insert_layer(0, [GATES.H, GATES.S], [(0,)])
 
+    def test_insert_layer_validates_batch_before_mutating_circuit(self):
+        c = Circuit.from_tuples([2, 2], [(GATES.H, 0)])
+
+        with pytest.raises(ValueError, match="Qudit indices must all differ"):
+            c.insert_layer(1, [GATES.CX], [(0, 0)])
+
+        assert self._as_tuples(c) == [("H", (0,))]
+
+    def test_insert_layer_noise_models_must_match_gates(self):
+        c = Circuit.from_tuples([2, 2], [(GATES.H, 0)])
+
+        with pytest.raises(ValueError, match="noise_models must have the same length"):
+            c.insert_layer(1, [GATES.S], [(1,)], noise_models=[])
+
     def test_insert_layer_invalid_position_raises(self):
         c = Circuit.from_tuples([2, 2], [(GATES.H, 0)])
 

@@ -668,21 +668,28 @@ class Circuit:
             The indices of the qudits the gate acts on.
         """
 
+        self._validate_gate_position(gate, qudit_indices)
+
+        self._gates.append(gate)
+        self._qudit_indices.append(tuple(qudit_indices))
+        self._noise_model_per_gate.append(noise_model)
+
+    def _validate_gate_position(self, gate: Gate, qudit_indices: tuple[int, ...]) -> None:
+        """Validate one gate operation against this circuit's dimensions."""
         if len(qudit_indices) != gate.n_qudits:
             raise ValueError(f"Gate {gate.name} acts on {gate.n_qudits} qudits, "
                              f"but {len(qudit_indices)} indices provided.")
+
+        if len(qudit_indices) != len(set(qudit_indices)):
+            raise ValueError(f"Qudit indices must all differ, got {qudit_indices}.")
 
         for idx in qudit_indices:
             if idx < 0 or idx >= len(self.dimensions):
                 raise IndexError(f"Qudit index {idx} out of range for circuit with {len(self.dimensions)} qudits.")
 
-        affected_dimensions = [self.dimensions[i] for i in qudit_indices]
-        if len(set(affected_dimensions)) != 1:
-            raise ValueError(f"Gate must act on qudits with the same dimensions (found {set(affected_dimensions)}).")
-
-        self._gates.append(gate)
-        self._qudit_indices.append(tuple(qudit_indices))
-        self._noise_model_per_gate.append(noise_model)
+        affected_dimensions = self.dimensions[list(qudit_indices)]
+        if not np.all(affected_dimensions == affected_dimensions[0]):
+            raise ValueError("Gate must act on qudits with the same dimensions.")
 
     def remove_gate(self, index: int):
         """Removes the gate at the specified index."""
@@ -768,17 +775,23 @@ class Circuit:
         """
         if len(gates) != len(qudit_indices):
             raise ValueError("gates and qudit_indices must have the same length.")
+        if noise_models is not None and len(noise_models) != len(gates):
+            raise ValueError("noise_models must have the same length as gates.")
 
         layers = self._compute_layers()
         if position < 0 or position > len(layers):
             raise ValueError(f"position {position} out of range for circuit with {len(layers)} layers.")
 
+        normalized_indices = [tuple(idxs) for idxs in qudit_indices]
+        for gate, idxs in zip(gates, normalized_indices):
+            self._validate_gate_position(gate, idxs)
+
         insert_at = layers[position][0] if position < len(layers) else len(self._gates)
 
-        for offset, (gate, idxs) in enumerate(zip(gates, qudit_indices)):
+        for offset, (gate, idxs) in enumerate(zip(gates, normalized_indices)):
             gate_position = insert_at + offset
             self._gates.insert(gate_position, gate)
-            self._qudit_indices.insert(gate_position, tuple(idxs))
+            self._qudit_indices.insert(gate_position, idxs)
             noise_model = noise_models[offset] if noise_models is not None else None
             self._noise_model_per_gate.insert(gate_position, noise_model)
 
