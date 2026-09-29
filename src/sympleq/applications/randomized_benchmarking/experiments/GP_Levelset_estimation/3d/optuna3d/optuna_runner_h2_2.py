@@ -19,7 +19,7 @@ REFERENCE_GRID_PATH = Path(
     "Personal/Data/accumulated/uniform_10_5000_grids/H2-2/"
     "accumulated_actualgr_H2-2_fle_costaware_20260813_175532_gp_grid_3d.npz"
 )
-OUTPUT_DIR = Path("Personal/Data/accumulated/Sympleq/Optuna3d_H2_2")
+OUTPUT_DIR = Path("Personal/Data/accumulated/Sympleq/Optuna3d_H2_2/try2")
 SUMMARY_CSV = OUTPUT_DIR / "optuna_3d_trials.csv"
 csv_path_ref = Path(
     "Personal/Data/accumulated/uniform_10_5000_grids/H2-2/"
@@ -118,11 +118,11 @@ def contour_3d_loss(ref_path, target_path):
 
 
 def objective(trial, prepared):
-    one_q_depol = trial.suggest_float("one_q_depol", 0.1, 10)
-    two_q_depol = trial.suggest_float("two_q_depol", 0.1, 10)
+    one_q_depol = trial.suggest_float("one_q_depol", 0.05, 2.5)
+    two_q_depol = trial.suggest_float("two_q_depol", 0.05, 2)
 
-    one_q_dephase = trial.suggest_float("one_q_dephase", 0.1, 10)
-    two_q_dephase = trial.suggest_float("two_q_dephase", 0.1, 10)
+    one_q_dephase = trial.suggest_float("one_q_dephase", 0.05, 2.5)
+    two_q_dephase = trial.suggest_float("two_q_dephase", 0.05, 2.5)
 
     run_dir = OUTPUT_DIR / f"trial_{trial.number:04d}"
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -192,6 +192,6 @@ if __name__ == "__main__":
     )
     study.optimize(
         lambda trial: objective(trial, prepared),
-        n_trials=500,
+        n_trials=200,
         callbacks=[save_trial],
     )
