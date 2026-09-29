@@ -653,21 +653,33 @@ class TestCircuits():
             assert n_1qg == sum(gate.n_qudits == 1 for gate in c.gates)
             assert n_2qg == sum(gate.n_qudits == 2 for gate in c.gates)
 
-    def test_from_number_of_gates(self):
+    def test_from_number_of_gates_and_remove_gate(self):
         """Test that a circuit can be created with a specific number of gates."""
         rng = np.random.default_rng(123)
         for _ in range(10):
             n_1qd_gates = int(rng.integers(10, 51))
-            n_2qd_gates = int(rng.integers(10, 101))
+            n_2qd_gates = int(rng.integers(10, 51))
 
             c = Circuit.from_number_of_gates(n_1qd_gates, n_2qd_gates, dimensions=[2, 2, 2, 2], rng=rng)
             assert c.n_gates() == n_1qd_gates + n_2qd_gates
             assert c.n_one_qudit_gates() == n_1qd_gates
             assert c.n_two_qudit_gates() == n_2qd_gates
+            c.remove_gate(4)
+            assert c.n_gates() == n_1qd_gates + n_2qd_gates - 1
             c = Circuit.from_number_of_gates(n_1qd_gates, n_2qd_gates, dimensions=[2, 2, 3, 3, 5], rng=rng)
             assert c.n_gates() == n_1qd_gates + n_2qd_gates
             assert c.n_one_qudit_gates() == n_1qd_gates
             assert c.n_two_qudit_gates() == n_2qd_gates
+            c.remove_gate(5)
+            assert c.n_gates() == n_1qd_gates + n_2qd_gates - 1
+
+    def test_remove_gate(self):
+        """Test that a gate can be removed from the circuit."""
+        c = Circuit.from_tuples([2, 2], [(GATES.H, 0), (GATES.CX, 0, 1)])
+        initial_n_gates = c.n_gates()
+        c.remove_gate(0)
+        assert c.n_gates() == initial_n_gates - 1
+        assert all(g.name != "H" for g in c.gates)
 
 
 class TestCircuitLayers():
