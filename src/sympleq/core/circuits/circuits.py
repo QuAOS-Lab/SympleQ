@@ -290,6 +290,14 @@ class Circuit:
 
         dimensions = np.asarray(dimensions, dtype=int)
         n_qudits = len(dimensions)
+        indices_by_dimension = [
+            np.flatnonzero(dimensions == dimension)
+            for dimension in np.unique(dimensions)
+            if np.count_nonzero(dimensions == dimension) >= 2
+        ]
+
+        if n_2qd_gates > 0 and not indices_by_dimension:
+            raise ValueError("At least two qudits with the same dimension are required for 2-qudit gates.")
 
         _gates: list[Gate] = []
         _qudit_indices: list[tuple[int, ...]] = []
@@ -312,7 +320,8 @@ class Circuit:
         # Assign all 2-qubit gates at random
         for _ in range(n_2qd_gates):
             gate = two_qudit_gates[rng.integers(0, len(two_qudit_gates))]
-            raw_q_idxs = rng.choice(range(n_qudits), 2, replace=False)
+            compatible_indices = indices_by_dimension[rng.integers(0, len(indices_by_dimension))]
+            raw_q_idxs = rng.choice(compatible_indices, 2, replace=False)
             q_idxs: tuple[int, int] = (int(raw_q_idxs[0]), int(raw_q_idxs[1]))
             _gates.append(gate)
             _qudit_indices.append(q_idxs)

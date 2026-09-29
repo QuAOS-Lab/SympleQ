@@ -653,6 +653,22 @@ class TestCircuits():
             assert n_1qg == sum(gate.n_qudits == 1 for gate in c.gates)
             assert n_2qg == sum(gate.n_qudits == 2 for gate in c.gates)
 
+    def test_from_number_of_gates(self):
+        """Test that a circuit can be created with a specific number of gates."""
+        rng = np.random.default_rng(123)
+        for _ in range(10):
+            n_1qd_gates = int(rng.integers(10, 51))
+            n_2qd_gates = int(rng.integers(10, 101))
+
+            c = Circuit.from_number_of_gates(n_1qd_gates, n_2qd_gates, dimensions=[2, 2, 2, 2], rng=rng)
+            assert c.n_gates() == n_1qd_gates + n_2qd_gates
+            assert c.n_one_qudit_gates() == n_1qd_gates
+            assert c.n_two_qudit_gates() == n_2qd_gates
+            c = Circuit.from_number_of_gates(n_1qd_gates, n_2qd_gates, dimensions=[2, 2, 3, 3, 5], rng=rng)
+            assert c.n_gates() == n_1qd_gates + n_2qd_gates
+            assert c.n_one_qudit_gates() == n_1qd_gates
+            assert c.n_two_qudit_gates() == n_2qd_gates
+
 
 class TestCircuitLayers():
 
