@@ -1,8 +1,7 @@
-"""Static Matplotlib 3D isosurface plot for one saved 3D FLE GP grid."""
+"""Static Matplotlib counterpart of plot_score_fle_3d.py."""
 
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 from statistics import NormalDist
@@ -12,159 +11,119 @@ import numpy as np
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from skimage.measure import marching_cubes
 
-# from fantasy_levelset_settings_3d import HQC_BUDGET
-
-
-# -------------------------------------------------------------------------
-# PATH / PLOT HANDLES
-# -------------------------------------------------------------------------
-
-RMB_JSON_PATH = Path(
-    r"Personal\seed_2025\rick_fantasy_gpu_crossing_20260623_184228.json"
+from plot_score_fle_3d import (
+    FAKE_ANCHOR_SLICES,
+    GATE_AXIS_MAX_LOG10,
+    GATE_AXIS_MIN_LOG10,
+    GP_GRID_PATH,
+    ISOSURFACE_OPACITY,
+    ONE_SIGMA_SURFACE_OPACITY,
+    RATIO_AXIS_MAX,
+    RATIO_AXIS_MIN,
+    RMB_JSON_PATH,
+    SHOW_FAILURE_POINTS,
+    SHOW_FAKE_ANCHORS,
+    SHOW_MEASURED_POINTS,
+    SHOW_ONE_SIGMA_SURFACES,
+    SHOW_SUCCESS_POINTS,
+    SHOW_TWO_SIGMA_SURFACES,
+    TWO_SIGMA_SURFACE_OPACITY,
+    fake_anchor_points_from_grid,
+    json_path_from_grid_path,
+    load_3d_grid,
+    load_points_from_jsons,
+    sibling_grid_path,
+    slice_json_paths_for_grid,
+    source_json_path_from_grid_metadata,
 )
 
-GP_GRID_PATH: Path | None = None
+
 PNG_PATH: Path | None = None
-
-SHOW_MEASURED_POINTS = True
-SHOW_FAKE_ANCHORS = True
-LAST_BACKEND_BATCH_SIZE: int | None = None
-
-ISOSURFACE_ALPHA = 0.4
-SHOW_ONE_SIGMA_SURFACES = True
-ONE_SIGMA_ALPHA = 0.4
-FAKE_ANCHOR_SLICES = 5
 FIGSIZE = (8.8, 7.0)
 DPI = 220
-
-
-def sibling_grid_path(json_path: Path) -> Path:
-    return json_path.parent / f"{json_path.stem}_gp_grid_3d.npz"
+VOLUME_RATIO_STRIDE = 4
+VOLUME_GATE_STRIDE = 3
 
 
 def sibling_png_path(json_path: Path) -> Path:
     return json_path.parent / f"{json_path.stem}_fle_isosurface_3d_matplotlib.png"
 
 
-def infer_n_qubits(record: dict) -> int | None:
-    for key in ("n_qubits", "qubits", "n_qb", "num_qubits"):
-        if key in record and record[key] is not None:
-            value = int(record[key])
-            if value > 0:
-                return value
-    return None
-
-
-def load_points(
-    json_path: Path,
-    *,
-    last_backend_batch_size: int | None = LAST_BACKEND_BATCH_SIZE,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    payload = json.loads(json_path.read_text(encoding="utf-8"))
-
-    gates: list[float] = []
-    ratios: list[float] = []
-    qubits: list[float] = []
-    outcomes: list[int] = []
-
-    records = payload.get("data", [])
-    if last_backend_batch_size is not None:
-        records = records[-last_backend_batch_size:]
-
-    for record in records:
-        n_1q = int(record["n_1qb_gates"])
-        n_2q = int(record["n_2qb_gates"])
-        total = n_1q + n_2q
-        if total <= 0:
-            continue
-
-        n_qubits = infer_n_qubits(record)
-        if n_qubits is None:
-            continue
-
-        counts = {int(outcome): int(count) for outcome, count in record["results"]}
-        successes = counts.get(1, 0)
-        failures = counts.get(0, 0)
-
-        if successes + failures <= 0:
-            continue
-
-        gates.append(float(total))
-        ratios.append(float(n_2q / total))
-        qubits.append(float(n_qubits))
-        outcomes.append(int(successes >= failures))
-
-    return (
-        np.asarray(gates, dtype=float),
-        np.asarray(ratios, dtype=float),
-        np.asarray(qubits, dtype=float),
-        np.asarray(outcomes, dtype=bool),
-    )
+def png_path_from_grid_path(grid_path: Path) -> Path:
+    return grid_path.parent / f"{grid_path.stem}_fle_isosurface_3d_matplotlib.png"
 
 
 def axis_from_grid(grid_array: np.ndarray, axis: int) -> np.ndarray:
-    """
-    Extract a 1D coordinate axis from a meshgrid-like 3D array.
-
-    Expected saved grid shape:
-        (n_qubits_grid, n_ratio_grid, n_gates_grid)
-
-    axes:
-        axis=0 -> qubits
-        axis=1 -> ratio
-        axis=2 -> gates
-    """
-
-    if axis == 0:
-        return grid_array[:, 0, 0]
-    if axis == 1:
-        return grid_array[0, :, 0]
-    if axis == 2:
-        return grid_array[0, 0, :]
-    raise ValueError(f"axis must be 0, 1, or 2, got {axis}")
+    indices = [0, 0, 0]
+    indices[axis] = slice(None)
+    return grid_array[tuple(indices)]
 
 
-def interp_axis(axis_values: np.ndarray, indices: np.ndarray) -> np.ndarray:
-    """
-    Convert marching-cubes fractional voxel indices into physical coordinates.
-    """
-
-    base = np.arange(len(axis_values), dtype=float)
-    return np.interp(indices, base, axis_values)
-
-
-def fake_anchor_points_from_grid(
-    gates_grid: np.ndarray,
-    ratio_grid: np.ndarray,
-    qubits_grid: np.ndarray,
+def surface_mesh(
+    field: np.ndarray,
+    level: float,
+    qubits_axis: np.ndarray,
+    ratio_axis: np.ndarray,
+    log_gates_axis: np.ndarray,
     *,
-    n_qubit_slices: int = FAKE_ANCHOR_SLICES,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Recreate the fake corner anchor coordinates from the plotted grid box."""
-
-    gates_min = float(np.nanmin(gates_grid))
-    gates_max = float(np.nanmax(gates_grid))
-    ratio_min = float(np.nanmin(ratio_grid))
-    ratio_max = float(np.nanmax(ratio_grid))
-    q_min = float(np.nanmin(qubits_grid))
-    q_max = float(np.nanmax(qubits_grid))
-    qubit_slices = np.rint(
-        np.linspace(q_min, q_max, max(1, int(n_qubit_slices)))
-    ).astype(float)
-
-    gates: list[float] = []
-    ratios: list[float] = []
-    qubits: list[float] = []
-    for q_slice in dict.fromkeys(float(q) for q in qubit_slices):
-        gates.extend([gates_min, gates_max])
-        ratios.extend([ratio_min, ratio_max])
-        qubits.extend([q_slice, q_slice])
-
-    return (
-        np.asarray(gates, dtype=float),
-        np.asarray(ratios, dtype=float),
-        np.asarray(qubits, dtype=float),
+    color: str,
+    alpha: float,
+) -> Poly3DCollection | None:
+    if not np.nanmin(field) <= level <= np.nanmax(field):
+        return None
+    vertices, faces, _, _ = marching_cubes(field, level=level)
+    qubits = np.interp(vertices[:, 0], np.arange(len(qubits_axis)), qubits_axis)
+    ratios = np.interp(vertices[:, 1], np.arange(len(ratio_axis)), ratio_axis)
+    log_gates = np.interp(
+        vertices[:, 2], np.arange(len(log_gates_axis)), log_gates_axis
     )
+    coordinates = np.column_stack((ratios, qubits, log_gates))
+    return Poly3DCollection(
+        coordinates[faces],
+        facecolor=color,
+        edgecolor="none",
+        alpha=alpha,
+    )
+
+
+def axis_edges(centres: np.ndarray) -> np.ndarray:
+    midpoints = 0.5 * (centres[:-1] + centres[1:])
+    return np.concatenate(
+        ([centres[0] - (midpoints[0] - centres[0])], midpoints,
+         [centres[-1] + (centres[-1] - midpoints[-1])])
+    )
+
+
+def add_success_volume(
+    ax,
+    success: np.ndarray,
+    ratio_axis: np.ndarray,
+    qubits_axis: np.ndarray,
+    log_gates_axis: np.ndarray,
+    color: str,
+    alpha: float,
+) -> None:
+    ratio_indices = np.arange(0, len(ratio_axis), VOLUME_RATIO_STRIDE)
+    gate_indices = np.arange(0, len(log_gates_axis), VOLUME_GATE_STRIDE)
+    reduced = success[:, ratio_indices][:, :, gate_indices].transpose(1, 0, 2)
+    x, y, z = np.meshgrid(
+        axis_edges(ratio_axis[ratio_indices]),
+        axis_edges(qubits_axis),
+        axis_edges(log_gates_axis[gate_indices]),
+        indexing="ij",
+    )
+    voxels = ax.voxels(
+        x,
+        y,
+        z,
+        reduced,
+        facecolors=color,
+        edgecolors="none",
+        alpha=alpha,
+        shade=False,
+    )
+    for collection in voxels.values():
+        collection.set_zorder(1)
 
 
 def plot_fle_isosurface_3d_matplotlib(
@@ -172,192 +131,216 @@ def plot_fle_isosurface_3d_matplotlib(
     grid_path: str | Path | None = GP_GRID_PATH,
     png_path: str | Path | None = PNG_PATH,
 ) -> None:
-    json_path = Path(json_path)
-    grid_path = sibling_grid_path(json_path) if grid_path is None else Path(grid_path)
-    png_path = sibling_png_path(json_path) if png_path is None else Path(png_path)
+    input_path = Path(json_path)
 
-    grid = np.load(grid_path)
-
-    gates_grid = np.asarray(grid["gates_grid"], dtype=float)
-    ratio_grid = np.asarray(grid["ratio_grid"], dtype=float)
-    qubits_grid = np.asarray(grid["qubits_grid"], dtype=float)
-    probabilities = np.asarray(grid["probabilities"], dtype=float)
-    latent_mean = np.asarray(grid["latent_mean"], dtype=float)
-    latent_std = np.sqrt(
-        np.clip(np.asarray(grid["latent_variance"], dtype=float), 0.0, None)
-    )
-    target = float(np.asarray(grid["target"]).item())
-
-    if probabilities.ndim != 3:
-        raise ValueError(
-            f"Expected a 3D probability grid, got ndim={probabilities.ndim}. "
-            "You probably loaded an old 2D slice grid."
+    if input_path.suffix.lower() == ".npz":
+        grid_path = input_path if grid_path is None else Path(grid_path)
+        json_candidate = json_path_from_grid_path(grid_path)
+        if json_candidate is None:
+            json_candidate = source_json_path_from_grid_metadata(grid_path)
+        measured_json_paths = (
+            [json_candidate]
+            if json_candidate is not None
+            else slice_json_paths_for_grid(grid_path)
         )
+        png_path = png_path_from_grid_path(grid_path) if png_path is None else Path(png_path)
+    else:
+        json_path = input_path
+        grid_path = sibling_grid_path(json_path) if grid_path is None else Path(grid_path)
+        measured_json_paths = [json_path]
+        png_path = sibling_png_path(json_path) if png_path is None else Path(png_path)
 
-    if not (np.nanmin(probabilities) <= target <= np.nanmax(probabilities)):
-        raise ValueError(
-            "Target is outside the predicted probability range. "
-            f"target={target}, range=({np.nanmin(probabilities)}, {np.nanmax(probabilities)})"
+    loaded = load_3d_grid(grid_path)
+    gates_grid = loaded["gates_grid"]
+    ratio_grid = loaded["ratio_grid"]
+    qubits_grid = loaded["qubits_grid"]
+    probabilities = loaded["probabilities"]
+    latent_mean = loaded["latent_mean"]
+    latent_variance = loaded["latent_variance"]
+    target = float(loaded["target"])
+    with np.load(grid_path) as grid_file:
+        native_model = (
+            str(np.asarray(grid_file["native_model"]).item())
+            if "native_model" in grid_file.files
+            else ""
         )
+    native_costaware = native_model.startswith("cost_aware_")
+    method_label = "PULSE" if native_costaware else "FLARE"
+    main_color = "#d85454" if native_costaware else  "#6563ee"
+    sigma_color = "#3e0404" if native_costaware else  "#093060"
+    volume_color = "#f8d7da" if native_costaware else "#95bbe9"
+    main_alpha = 0.6 if native_costaware else ISOSURFACE_OPACITY
+    sigma_alpha_scale = 0.5 if native_costaware else 1.0
+    volume_alpha = 0.5 if native_costaware else 0.5
 
-    # Saved grid shape should be:
-    #   probabilities[q_index, ratio_index, gates_index]
-    qubits_axis = axis_from_grid(qubits_grid, axis=0)
-    ratio_axis = axis_from_grid(ratio_grid, axis=1)
-    gates_axis = axis_from_grid(gates_grid, axis=2)
-    log_gates_axis = np.log10(gates_axis)
-
-    # marching_cubes works in array-index coordinates:
-    #   vertex[:, 0] = q index
-    #   vertex[:, 1] = ratio index
-    #   vertex[:, 2] = gates index
-    verts, faces, normals, values = marching_cubes(
-        probabilities,
-        level=target,
+    qubits_axis = axis_from_grid(qubits_grid, 0)
+    ratio_axis = axis_from_grid(ratio_grid, 1)
+    log_gates_axis = np.log10(axis_from_grid(gates_grid, 2))
+    gate_mask = (
+        (log_gates_axis >= GATE_AXIS_MIN_LOG10)
+        & (log_gates_axis <= GATE_AXIS_MAX_LOG10)
     )
-
-    q_coords = interp_axis(qubits_axis, verts[:, 0])
-    ratio_coords = interp_axis(ratio_axis, verts[:, 1])
-    log_gate_coords = interp_axis(log_gates_axis, verts[:, 2])
-
-    # Matplotlib wants vertices as (x, y, z).
-    # We choose:
-    #   x = log10(total gates)
-    #   y = two-qubit gate ratio
-    #   z = n_qubits
-    surface_vertices = np.column_stack(
-        [
-            log_gate_coords,
-            ratio_coords,
-            q_coords,
-        ]
+    if np.count_nonzero(gate_mask) < 2:
+        raise ValueError("Fewer than two gate-grid points lie inside the plot range")
+    log_gates_axis = log_gates_axis[gate_mask]
+    probabilities_for_plot = probabilities[:, :, gate_mask]
+    latent_mean_for_plot = (
+        None if latent_mean is None else latent_mean[:, :, gate_mask]
     )
-
-    mesh = Poly3DCollection(
-        surface_vertices[faces],
-        alpha=ISOSURFACE_ALPHA,
-        linewidths=0.15,
+    latent_variance_for_plot = (
+        None if latent_variance is None else latent_variance[:, :, gate_mask]
     )
-    mesh.set_facecolor("0.25")
-    mesh.set_edgecolor("0.12")
 
     fig = plt.figure(figsize=FIGSIZE)
     ax = fig.add_subplot(111, projection="3d")
     ax.computed_zorder = False
-    ax.add_collection3d(mesh)
-    mesh.set_zorder(1)
 
-    if SHOW_ONE_SIGMA_SURFACES:
-        latent_target = NormalDist().inv_cdf(target)
-        for label, level_set, color in [
-            ("GP latent mean - 1 sigma", latent_mean - latent_std, "tab:blue"),
-            ("GP latent mean + 1 sigma", latent_mean + latent_std, "tab:red"),
-        ]:
-            if not (
-                np.nanmin(level_set) <= latent_target <= np.nanmax(level_set)
-            ):
-                print(f"[warning] skipped {label}: it does not cross the grid")
-                continue
+    main_field = (
+        latent_mean_for_plot
+        if native_costaware and latent_mean_for_plot is not None
+        else probabilities_for_plot
+    )
+    main_level = 0.0 if native_costaware else target
+    main_label = (
+        "PULSE posterior mean boundary"
+        if native_costaware
+        else f"FLARE GP P(success) = {target:g}"
+    )
+    add_success_volume(
+        ax,
+        np.isfinite(main_field) & (main_field >= main_level),
+        ratio_axis,
+        qubits_axis,
+        log_gates_axis,
+        volume_color,
+        volume_alpha,
+    )
+    ax.plot(
+        [], [], [],
+        color=volume_color,
+        linewidth=8,
+        alpha=0.8,
+        label="Success-side volume",
+    )
+    main_mesh = surface_mesh(
+        main_field,
+        main_level,
+        qubits_axis,
+        ratio_axis,
+        log_gates_axis,
+        color=main_color,
+        alpha=main_alpha,
+    )
+    if main_mesh is not None:
+        ax.add_collection3d(main_mesh)
+        main_mesh.set_zorder(4)
+        ax.plot([], [], [], color=main_color, linewidth=5, label=main_label)
 
-            sigma_verts, sigma_faces, _, _ = marching_cubes(
-                level_set,
-                level=latent_target,
+    if SHOW_ONE_SIGMA_SURFACES or SHOW_TWO_SIGMA_SURFACES:
+        if latent_mean_for_plot is None or latent_variance_for_plot is None:
+            print(
+                "[warning] skipped sigma surfaces: "
+                "latent_mean/latent_variance not found in grid."
             )
-            sigma_vertices = np.column_stack(
-                [
-                    interp_axis(log_gates_axis, sigma_verts[:, 2]),
-                    interp_axis(ratio_axis, sigma_verts[:, 1]),
-                    interp_axis(qubits_axis, sigma_verts[:, 0]),
-                ]
-            )
-            sigma_mesh = Poly3DCollection(
-                sigma_vertices[sigma_faces],
-                alpha=ONE_SIGMA_ALPHA,
-                linewidths=0.0,
-            )
-            sigma_mesh.set_facecolor(color)
-            sigma_mesh.set_edgecolor("none")
-            ax.add_collection3d(sigma_mesh)
-            sigma_mesh.set_zorder(2)
-            ax.plot([], [], [], color=color, linewidth=5, label=label)
+        else:
+            latent_std = np.sqrt(np.clip(latent_variance_for_plot, 0.0, None))
+            latent_target = 0.0 if native_costaware else NormalDist().inv_cdf(target)
+            sigma_surfaces = []
+            if SHOW_ONE_SIGMA_SURFACES:
+                sigma_surfaces.extend(
+                    [
+                        (f"{method_label} - 1 sigma", latent_mean_for_plot - latent_std,
+                         sigma_color, ONE_SIGMA_SURFACE_OPACITY * sigma_alpha_scale),
+                        (f"{method_label} + 1 sigma", latent_mean_for_plot + latent_std,
+                         sigma_color, ONE_SIGMA_SURFACE_OPACITY * sigma_alpha_scale),
+                    ]
+                )
+            if SHOW_TWO_SIGMA_SURFACES:
+                sigma_surfaces.extend(
+                    [
+                        (f"{method_label} - 2 sigma", latent_mean_for_plot - 2.0 * latent_std,
+                         sigma_color, TWO_SIGMA_SURFACE_OPACITY * sigma_alpha_scale),
+                        (f"{method_label} + 2 sigma", latent_mean_for_plot + 2.0 * latent_std,
+                         sigma_color, TWO_SIGMA_SURFACE_OPACITY * sigma_alpha_scale),
+                    ]
+                )
+            for label, field, color, alpha in sigma_surfaces:
+                mesh = surface_mesh(
+                    field,
+                    latent_target,
+                    qubits_axis,
+                    ratio_axis,
+                    log_gates_axis,
+                    color=color,
+                    alpha=alpha,
+                )
+                if mesh is None:
+                    print(f"[warning] skipped {label}: it does not cross the grid")
+                    continue
+                ax.add_collection3d(mesh)
+                mesh.set_zorder(3)
+                ax.plot([], [], [], color=color, linewidth=5, label=label)
 
     if SHOW_FAKE_ANCHORS:
-        fake_gates, fake_ratios, fake_qubits = fake_anchor_points_from_grid(
+        gates, ratios, qubits = fake_anchor_points_from_grid(
             gates_grid,
             ratio_grid,
             qubits_grid,
+            n_qubit_slices=FAKE_ANCHOR_SLICES,
         )
         ax.scatter(
-            np.log10(fake_gates),
-            fake_ratios,
-            fake_qubits,
+            ratios,
+            qubits,
+            np.log10(gates),
             marker="s",
             color="gray",
-            edgecolors="gray",
             s=34,
             depthshade=False,
-            zorder=21,
             label="Fake corner anchors",
         )
 
     if SHOW_MEASURED_POINTS:
-        point_gates, point_ratios, point_qubits, point_outcomes = load_points(json_path)
-
-        if len(point_gates) > 0:
+        gates, ratios, qubits, outcomes = load_points_from_jsons(measured_json_paths)
+        if SHOW_FAILURE_POINTS and np.any(~outcomes):
             ax.scatter(
-                np.log10(point_gates[~point_outcomes]),
-                point_ratios[~point_outcomes],
-                point_qubits[~point_outcomes],
+                ratios[~outcomes],
+                qubits[~outcomes],
+                np.log10(gates[~outcomes]),
                 marker="x",
-                color="black",
+                color="seagreen",
                 s=36,
                 linewidths=1.4,
                 depthshade=False,
-                zorder=20,
                 label="Failure",
             )
+        if SHOW_SUCCESS_POINTS and np.any(outcomes):
             ax.scatter(
-                np.log10(point_gates[point_outcomes]),
-                point_ratios[point_outcomes],
-                point_qubits[point_outcomes],
+                ratios[outcomes],
+                qubits[outcomes],
+                np.log10(gates[outcomes]),
                 marker="o",
+                facecolors="none",
+                edgecolors="mediumpurple",
                 s=34,
-                facecolors="white",
-                edgecolors="black",
-                linewidths=1.0,
+                linewidths=1.5,
                 depthshade=False,
-                zorder=20,
                 label="Success",
             )
 
-    ax.set_xlim(float(np.min(log_gates_axis)), float(np.max(log_gates_axis)))
-    ax.set_ylim(float(np.min(ratio_axis)), float(np.max(ratio_axis)))
-    ax.set_zlim(float(np.min(qubits_axis)), float(np.max(qubits_axis)))
-
-    ax.set_xlabel("log10(total gates)")
-    ax.set_ylabel("Two-qubit gate ratio")
-    ax.set_zlabel("n_qubits")
-
-    ax.set_title(
-        f"3D FLE GP level set | HQC={1323} | "
-        f"P(success)={target:g}"
-    )
-
-    # Useful view angle similar to your screenshot.
-    ax.view_init(elev=24, azim=38)
-
-    # Dummy legend entry for the surface.
-    ax.plot([], [], [], color="0.25", linewidth=6, label=f"GP P(success)={target:g}")
-    if SHOW_MEASURED_POINTS:
-        ax.legend(loc="best", fontsize=8)
-    else:
-        ax.legend(loc="best", fontsize=8)
-
-    fig.tight_layout()
+    ax.set_xlim(RATIO_AXIS_MIN, RATIO_AXIS_MAX)
+    ax.set_ylim(20, 60)
+    ax.set_zlim(GATE_AXIS_MIN_LOG10, GATE_AXIS_MAX_LOG10)
+    ax.set_xlabel("Two-qubit gate ratio")
+    ax.set_ylabel("Qubits", labelpad=10)
+    ax.set_zlabel("log10(total gates)")
+    title_prefix = "3D PULSE level set" if native_costaware else "3D FLARE level set"
+    ax.set_title(f"{title_prefix} | P(success)={target:g}")
+    ax.view_init(elev=24, azim=-60)
+    ax.legend(loc="best", fontsize=8)
+    fig.tight_layout(rect=(0.0, 0.0, 0.94, 1.0))
 
     png_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(png_path, dpi=DPI, bbox_inches="tight")
-
     print(f"[grid] loaded: {grid_path}")
     print(f"[grid] probabilities shape: {probabilities.shape}")
     print(
@@ -367,7 +350,6 @@ def plot_fle_isosurface_3d_matplotlib(
     )
     print(f"[grid] target: {target}")
     print(f"[saved] Matplotlib 3D isosurface: {png_path}")
-
     plt.show()
 
 

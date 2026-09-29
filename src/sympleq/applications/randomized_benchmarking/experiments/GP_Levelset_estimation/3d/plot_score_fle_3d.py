@@ -26,7 +26,7 @@ HTML_PATH: Path | None = None
 
 LAST_BACKEND_BATCH_SIZE: int | None = None
 # Turn this off for a cleaner diagnostic.
-SHOW_VOLUME_BACKGROUND = False
+SHOW_VOLUME_BACKGROUND = True
 
 # Turn this off if you only want the GP level-set surface.
 SHOW_MEASURED_POINTS = False

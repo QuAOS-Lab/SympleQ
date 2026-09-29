@@ -36,7 +36,7 @@ from sympleq.integrations.quantinuum.utils import (
 from sympleq.applications.randomized_benchmarking.backends.sympleq import SympleqBackend
 from sympleq.core.noise.noise_model import DephasingNoise, GenericNoise
 
-ONE_Q_NOISE = 1.9e-4
+ONE_Q_NOISE = 1.9e-5
 TWO_Q_NOISE = 1.10e-3
 
 

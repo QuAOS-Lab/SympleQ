@@ -123,7 +123,7 @@ TARGET_THRESHOLD = 0.5
 # NuUMBER of Qubits
 # -------------------------------------------------------------------------
 
-N_QUBITS = 26
+N_QUBITS = 56
 # For a multi-slice run, use e.g.:
 # N_QUBITS = [5,20]
 
