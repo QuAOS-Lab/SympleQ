@@ -495,8 +495,8 @@ class Gate(ABC):
             A Circuit containing this gate.
         """
         # Imports here to avoid circularity - there may be a better way
-        from sympleq.core.circuits.gate_decomposition_to_circuit import gate_to_circuit
-        return gate_to_circuit(self, dimensions)
+        from sympleq.core.circuits.gate_decomposition_to_circuit import _gate_to_circuit
+        return _gate_to_circuit(self, dimensions)
 
 
 class _GenericGate(Gate):

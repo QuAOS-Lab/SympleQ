@@ -657,7 +657,7 @@ def pauli_correction_gate(F: TableauType,
         return PauliGate(pauli)
 
 
-def gate_to_circuit(big_gate: Gate, dimensions: DimensionsLike) -> Circuit:
+def _gate_to_circuit(big_gate: Gate, dimensions: DimensionsLike) -> Circuit:
     """
     Decompose a single Gate (F, h) into a Circuit of Clifford generators
     (Hadamard/PHASE/CX/SWAP/…) followed by a final PauliGate that fixes the

@@ -9,7 +9,7 @@ from sympleq.core.circuits.gate_decomposition_to_circuit import (inv_gfp, mod_p,
                                                                  synth_lower_from_symmetric,
                                                                  synth_upper_from_symmetric_via_H, _as_int_mod,
                                                                  decompose_symplectic_to_circuit,
-                                                                 _compose_symp, _full_from_lower, gate_to_circuit)
+                                                                 _compose_symp, _full_from_lower)
 
 from sympleq.core.paulis import PauliSum, PauliString
 
@@ -387,7 +387,7 @@ class TestDecomposition:
                 C_in = Circuit.from_depth(depth=depth_in_C_in, dimensions=[p] * n)
                 big_gate_in = C_in.composite_gate()
 
-                C_out = gate_to_circuit(big_gate_in, dimensions=[p] * n)
+                C_out = big_gate_in.to_circuit(np.array([p] * n))
                 big_gate_out = C_out.composite_gate()
 
                 assert np.array_equal(big_gate_in.symplectic % p, big_gate_out.symplectic % p)
@@ -424,7 +424,7 @@ class TestDecomposition:
                 C_in.add_gate(pauli_gate, *tuple(range(n)))
                 G_in = C_in.composite_gate()
 
-                C_out = gate_to_circuit(G_in, dimensions=[p] * n)
+                C_out = G_in.to_circuit(np.array([p] * n))
                 G_out = C_out.composite_gate()
 
                 # Symplectic must match exactly mod p
