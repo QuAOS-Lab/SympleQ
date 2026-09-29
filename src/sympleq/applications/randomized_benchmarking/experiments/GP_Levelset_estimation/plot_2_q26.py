@@ -23,8 +23,12 @@ OUT_CSV_WITH_FAKE_H = OUT_PATH_WITH_FAKE_H.with_name(
 OUT_CSV_WITHOUT_FAKE_H = OUT_PATH_WITHOUT_FAKE_H.with_name(
     "plot2_q26_without_fake_h_h2_1_contour.csv"
 )
-SYMPLEQ_CONTOUR_PATH = Path(
+H2_1_SYMPLEQ_CONTOUR_PATH = Path(
     r"Personal\Data\accumulated\Sympleq\Optuna3d\trial_0123"
+    r"\qubitwise_contours_noise.csv"
+)
+H2_2_SYMPLEQ_CONTOUR_PATH = Path(
+    r"Personal\Data\accumulated\Sympleq\Optuna3d_H2_2\try2\trial_0131"
     r"\qubitwise_contours_noise.csv"
 )
 
@@ -152,8 +156,12 @@ def save_contour_csv(contour, output_path: Path, *, target: float) -> None:
     print(f"[saved] H2-1 contour: {output_path}")
 
 
-def load_saved_contour(qubit: float, sigma_level: float) -> np.ndarray:
-    with SYMPLEQ_CONTOUR_PATH.open("r", newline="", encoding="utf-8") as handle:
+def load_saved_contour(
+    contour_path: Path,
+    qubit: float,
+    sigma_level: float,
+) -> np.ndarray:
+    with contour_path.open("r", newline="", encoding="utf-8") as handle:
         for row in csv.DictReader(handle):
             if np.isclose(float(row["qubit"]), qubit) and np.isclose(
                 float(row["sigma_level"]), sigma_level
@@ -166,17 +174,25 @@ def load_saved_contour(qubit: float, sigma_level: float) -> np.ndarray:
                     sep=" ",
                 )
                 return values.reshape(-1, 2)
-    raise ValueError(f"No SympleQ contour for q={qubit}, sigma={sigma_level}")
+    raise ValueError(
+        f"No SympleQ contour in {contour_path} for q={qubit}, sigma={sigma_level}"
+    )
 
 
-def add_sympleq_contours(ax, qubit: float) -> None:
-    mean = load_saved_contour(qubit, 0.0)
-    minus = load_saved_contour(qubit, -2.0)
-    plus = load_saved_contour(qubit, 2.0)
+def add_sympleq_contours(
+    ax,
+    *,
+    contour_path: Path,
+    qubit: float,
+    label: str,
+    color: str,
+) -> None:
+    mean = load_saved_contour(contour_path, qubit, 0.0)
+    minus = load_saved_contour(contour_path, qubit, -2.0)
+    plus = load_saved_contour(contour_path, qubit, 2.0)
     mean = mean[np.argsort(mean[:, 0])]
     minus = minus[np.argsort(minus[:, 0])]
     plus = plus[np.argsort(plus[:, 0])]
-    color = "dodgerblue"
 
     ax.fill(
         np.r_[minus[:, 0], plus[::-1, 0]],
@@ -185,7 +201,7 @@ def add_sympleq_contours(ax, qubit: float) -> None:
         alpha=SIGMA_ALPHA,
         linewidth=0.0,
         zorder=3,
-        label=r"SympleQ $\mu \pm 2\sigma$",
+        label=rf"{label} $\mu \pm 2\sigma$",
     )
     ax.plot(
         mean[:, 0],
@@ -193,7 +209,7 @@ def add_sympleq_contours(ax, qubit: float) -> None:
         color=color,
         linestyle="-.",
         linewidth=2.2,
-        label="SympleQ GP mean p=0.5",
+        label=f"{label} GP mean p=0.5",
         zorder=7,
     )
 
@@ -331,7 +347,7 @@ def make_plot(
     *,
     title: str,
     output_path: Path,
-    sympleq_qubit: float | None = None,
+    sympleq_overlays: tuple[dict, ...] = (),
 ) -> None:
     fig, ax = plt.subplots(1, 1, figsize=(8.0, 5.6))
     for index, dataset in enumerate(datasets):
@@ -341,8 +357,8 @@ def make_plot(
             dataset,
             show_hue=SHOW_PREDICTED_FIDELITY_HUE and index == 0,
         )
-    if sympleq_qubit is not None:
-        add_sympleq_contours(ax, sympleq_qubit)
+    for overlay in sympleq_overlays:
+        add_sympleq_contours(ax, **overlay)
 
     ax.set_yscale("log")
     ax.set_xlim(*RATIO_AXIS_LIMITS)
@@ -423,7 +439,20 @@ def main() -> None:
         without_fake_h,
         title="Without Fake Hadamard",
         output_path=OUT_PATH_WITHOUT_FAKE_H,
-        sympleq_qubit=26.0,
+        sympleq_overlays=(
+            {
+                "contour_path": H2_1_SYMPLEQ_CONTOUR_PATH,
+                "qubit": 26.0,
+                "label": "SympleQ H2-1 trial 123",
+                "color": "dodgerblue",
+            },
+            {
+                "contour_path": H2_2_SYMPLEQ_CONTOUR_PATH,
+                "qubit": 26.0,
+                "label": "SympleQ H2-2 trial 131",
+                "color": "lightcoral",
+            },
+        ),
     )
     plt.show()
 

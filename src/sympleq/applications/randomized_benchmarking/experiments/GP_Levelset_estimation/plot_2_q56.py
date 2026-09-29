@@ -1,4 +1,4 @@
-"""Plot H2-1 q56 level sets with and without Fake Hadamard."""
+"""Plot q56 level sets with and without Fake Hadamard."""
 
 from __future__ import annotations
 
@@ -23,8 +23,12 @@ OUT_CSV_WITH_FAKE_H = OUT_PATH_WITH_FAKE_H.with_name(
 OUT_CSV_WITHOUT_FAKE_H = OUT_PATH_WITHOUT_FAKE_H.with_name(
     "plot2_q56_without_fake_h_h2_1_contour.csv"
 )
-SYMPLEQ_CONTOUR_PATH = Path(
+H2_1_SYMPLEQ_CONTOUR_PATH = Path(
     r"Personal\Data\accumulated\Sympleq\Optuna3d\trial_0123"
+    r"\qubitwise_contours_noise.csv"
+)
+H2_2_SYMPLEQ_CONTOUR_PATH = Path(
+    r"Personal\Data\accumulated\Sympleq\Optuna3d_H2_2\try2\trial_0131"
     r"\qubitwise_contours_noise.csv"
 )
 
@@ -47,6 +51,16 @@ Q56_ORDINARY_GRID_PATH = Path(
     r"\accumulated_actualgr_H2-1_fle_costaware_20260813_175523_q_slices"
     r"\accumulated_actualgr_H2-1_fle_costaware_20260813_175523_q56_gp_grid.npz"
 )
+Q56_H2_2_JSON_PATH = Path(
+    r"Personal\Data\accumulated\H2-2"
+    r"\accumulated_actualgr_H2-2_fle_costaware_20260813_175532_q_slices"
+    r"\accumulated_actualgr_H2-2_fle_costaware_20260813_175532_q56.json"
+)
+Q56_H2_2_GRID_PATH = Path(
+    r"Personal\Data\accumulated\H2-2"
+    r"\accumulated_actualgr_H2-2_fle_costaware_20260813_175532_q_slices"
+    r"\accumulated_actualgr_H2-2_fle_costaware_20260813_175532_q56_gp_grid.npz"
+)
 
 GATES_AXIS_LIMITS = (200.0, 2000.0)
 RATIO_AXIS_LIMITS = (0.1, 0.9)
@@ -55,6 +69,7 @@ SHOW_UNCERTAINTY = True
 SHOW_DATA_POINTS_WITH_FAKE_H = False
 SHOW_DATA_POINTS_WITHOUT_FAKE_H = False
 H2_1_COLOR = "navy"
+H2_2_COLOR = "darkred"
 SIGMA_ALPHA = 0.25
 
 
@@ -110,8 +125,12 @@ def save_contour_csv(contour, output_path: Path, *, target: float) -> None:
     print(f"[saved] H2-1 contour: {output_path}")
 
 
-def load_saved_contour(qubit: float, sigma_level: float) -> np.ndarray:
-    with SYMPLEQ_CONTOUR_PATH.open("r", newline="", encoding="utf-8") as handle:
+def load_saved_contour(
+    contour_path: Path,
+    qubit: float,
+    sigma_level: float,
+) -> np.ndarray:
+    with contour_path.open("r", newline="", encoding="utf-8") as handle:
         for row in csv.DictReader(handle):
             if np.isclose(float(row["qubit"]), qubit) and np.isclose(
                 float(row["sigma_level"]), sigma_level
@@ -124,17 +143,25 @@ def load_saved_contour(qubit: float, sigma_level: float) -> np.ndarray:
                     sep=" ",
                 )
                 return values.reshape(-1, 2)
-    raise ValueError(f"No SympleQ contour for q={qubit}, sigma={sigma_level}")
+    raise ValueError(
+        f"No SympleQ contour in {contour_path} for q={qubit}, sigma={sigma_level}"
+    )
 
 
-def add_sympleq_contours(ax, qubit: float) -> None:
-    mean = load_saved_contour(qubit, 0.0)
-    minus = load_saved_contour(qubit, -2.0)
-    plus = load_saved_contour(qubit, 2.0)
+def add_sympleq_contours(
+    ax,
+    *,
+    contour_path: Path,
+    qubit: float,
+    label: str,
+    color: str,
+) -> None:
+    mean = load_saved_contour(contour_path, qubit, 0.0)
+    minus = load_saved_contour(contour_path, qubit, -2.0)
+    plus = load_saved_contour(contour_path, qubit, 2.0)
     mean = mean[np.argsort(mean[:, 0])]
     minus = minus[np.argsort(minus[:, 0])]
     plus = plus[np.argsort(plus[:, 0])]
-    color = "dodgerblue"
 
     ax.fill(
         np.r_[minus[:, 0], plus[::-1, 0]],
@@ -143,7 +170,7 @@ def add_sympleq_contours(ax, qubit: float) -> None:
         alpha=SIGMA_ALPHA,
         linewidth=0.0,
         zorder=3,
-        label=r"SympleQ $\mu \pm 2\sigma$",
+        label=rf"{label} $\mu \pm 2\sigma$",
     )
     ax.plot(
         mean[:, 0],
@@ -151,7 +178,7 @@ def add_sympleq_contours(ax, qubit: float) -> None:
         color=color,
         linestyle="-.",
         linewidth=2.2,
-        label="SympleQ GP mean p=0.5",
+        label=f"{label} GP mean p=0.5",
         zorder=7,
     )
 
@@ -164,7 +191,9 @@ def plot_panel(
     grid_path: Path,
     title: str,
     show_points: bool,
-    contour_csv_path: Path,
+    contour_csv_path: Path | None,
+    label: str = "H2-1",
+    color: str = H2_1_COLOR,
 ) -> None:
     grid = np.load(grid_path)
     ratio_grid = np.asarray(grid["ratio_grid"], dtype=float)
@@ -199,17 +228,17 @@ def plot_panel(
                 gates_grid,
                 band,
                 levels=[float(np.min(finite_band)), 0.0],
-                colors=[H2_1_COLOR],
+                colors=[color],
                 alpha=SIGMA_ALPHA,
                 zorder=3,
             )
             ax.plot(
                 [],
                 [],
-                color=H2_1_COLOR,
+                color=color,
                 linewidth=8.0,
                 alpha=SIGMA_ALPHA,
-                label=r"H2-1 $\mu \pm 2\sigma$",
+                label=rf"{label} $\mu \pm 2\sigma$",
             )
 
     mean_contour = ax.contour(
@@ -217,19 +246,20 @@ def plot_panel(
         gates_grid,
         latent_mean,
         levels=[latent_target],
-        colors=H2_1_COLOR,
+        colors=color,
         linestyles="-",
         linewidths=2.2,
         zorder=6,
     )
-    save_contour_csv(mean_contour, contour_csv_path, target=target)
+    if contour_csv_path is not None:
+        save_contour_csv(mean_contour, contour_csv_path, target=target)
     ax.plot(
         [],
         [],
-        color=H2_1_COLOR,
+        color=color,
         linestyle="-",
         linewidth=2.2,
-        label=f"H2-1 GP mean p={target:g}",
+        label=f"{label} GP mean p={target:g}",
     )
 
     failures_x, failures_y, successes_x, successes_y, observations = load_points(json_path)
@@ -239,7 +269,7 @@ def plot_panel(
             failures_y,
             marker="x",
             s=34,
-            color=H2_1_COLOR,
+            color=color,
             linewidths=1.4,
             label="Failure",
             zorder=8,
@@ -250,7 +280,7 @@ def plot_panel(
             marker="o",
             s=40,
             facecolors="white",
-            edgecolors=H2_1_COLOR,
+            edgecolors=color,
             linewidths=1.2,
             label="Success",
             zorder=9,
@@ -292,7 +322,31 @@ def main() -> None:
         show_points=SHOW_DATA_POINTS_WITHOUT_FAKE_H,
         contour_csv_path=OUT_CSV_WITHOUT_FAKE_H,
     )
-    add_sympleq_contours(ax, 56.0)
+    plot_panel(
+        fig,
+        ax,
+        json_path=Q56_H2_2_JSON_PATH,
+        grid_path=Q56_H2_2_GRID_PATH,
+        title="Without Fake Hadamard",
+        show_points=False,
+        contour_csv_path=None,
+        label="H2-2",
+        color=H2_2_COLOR,
+    )
+    add_sympleq_contours(
+        ax,
+        contour_path=H2_1_SYMPLEQ_CONTOUR_PATH,
+        qubit=56.0,
+        label="SympleQ H2-1 trial 123",
+        color="dodgerblue",
+    )
+    add_sympleq_contours(
+        ax,
+        contour_path=H2_2_SYMPLEQ_CONTOUR_PATH,
+        qubit=56.0,
+        label="SympleQ H2-2 trial 131",
+        color="lightcoral",
+    )
     ax.legend(loc="upper right", fontsize=8, frameon=True, framealpha=0.9)
     ax.set_ylabel("Total gates")
     fig.tight_layout()
