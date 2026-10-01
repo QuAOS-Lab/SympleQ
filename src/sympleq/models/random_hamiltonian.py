@@ -79,7 +79,7 @@ def random_pauli_hamiltonian(num_paulis, qudit_dims, mode='rand'):
             conjugate_index = bases_to_int(exponents_H, q2)
             coefficients.append(coeff)
             coefficients.append(np.conj(coeff) * phase_factor)
-            available_paulis.remove(conjugate_index)
+            available_paulis.remove(np.int_(conjugate_index))
             pauli_strings.append(PauliString.from_string(pauli_str_H.strip(), dimensions=qudit_dims))
         else:
             coefficients.append(coeff.real)
@@ -90,7 +90,7 @@ def random_pauli_hamiltonian(num_paulis, qudit_dims, mode='rand'):
 
 
 def random_pauli_symmetry_hamiltonian(n_qudits: int, n_paulis: int, n_redundant=0,
-                                      n_conditional=0, weight_mode='uniform', phase_mode='zero', shuffle=True):
+                                      n_conditional=0, weight_mode='uniform', phase_mode='zero', scrambled=True):
     # 0: I, 1: X, 2: Z, 3: Y
     """
     Generate a random Pauli Hamiltonian with n_qudits qudits and n_paulis Pauli strings,
@@ -113,6 +113,8 @@ def random_pauli_symmetry_hamiltonian(n_qudits: int, n_paulis: int, n_redundant=
         The mode of the weights. Can be 'uniform' (default) or 'random'.
     phase_mode : str, optional
         The mode of the phases. Can be 'zero' (default) or 'random'.
+    scrambled : bool, optional
+        Whether to scramble the Pauli strings with Clifford gates. Default is True.
     Returns
     -------
     P : PauliSum
@@ -180,9 +182,9 @@ def random_pauli_symmetry_hamiltonian(n_qudits: int, n_paulis: int, n_redundant=
 
     P = PauliSum.from_string(pauli_strings, dimensions=[2] * n_qudits, weights=weights, phases=phases)
 
-    if shuffle:
+    if scrambled:
         g = Gate.from_random(n_qudits, 2)
-        P = g.act(P, tuple(np.arange(n_qudits)))
+        P = g.act(P, tuple(int(i) for i in range(n_qudits)))
 
     return P
 
