@@ -39,7 +39,7 @@ from sympleq.applications.randomized_benchmarking.experiments.GP_Levelset_estima
 from sympleq.integrations.quantinuum.utils import NATIVE_GATES_SET
 
 
-ROOT = Path("Personal/Data/optuna_opt")
+ROOT = Path("Personal/Data/optuna_opt_new")
 SUMMARY_CSV = ROOT / "optuna_trials.csv"
 N_TRIALS = 2000
 GRID_GATES_BOUNDS = (100, 3000)
