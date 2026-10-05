@@ -201,10 +201,10 @@ def run_dataset(name, prepared, backend, run_dir):
 
 def objective(trial, prepared, references):
     params = {
-        "alpha_1q_depol": trial.suggest_float("one_q_depol", 0.1, 10),
-        "alpha_2q_depol": trial.suggest_float("two_q_depol", 0.1, 10),
-        "alpha_1q_dephase": trial.suggest_float("one_q_dephase", 0.1, 10),
-        "alpha_2q_dephase": trial.suggest_float("two_q_dephase", 0.1, 10),
+        "alpha_1q_depol": trial.suggest_float("one_q_depol", 0.05, 2.5),
+        "alpha_2q_depol": trial.suggest_float("two_q_depol", 0.05, 2.5),
+        "alpha_1q_dephase": trial.suggest_float("one_q_dephase", 0.05, 2.5),
+        "alpha_2q_dephase": trial.suggest_float("two_q_dephase", 0.05, 2.5),
     }
     backend = mixed_sympleq_backend_factory(
         settings=None,
