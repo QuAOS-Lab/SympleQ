@@ -44,6 +44,7 @@ SUMMARY_CSV = ROOT / "optuna_trials.csv"
 N_TRIALS = 2000
 GRID_GATES_BOUNDS = (100, 3000)
 GRID_RATIO_BOUNDS = (0.1, 0.97)
+NO_CONTOUR_LOSS = 1.0e9
 
 DATASETS = {
     "q26_with_vwrap": (
@@ -127,9 +128,8 @@ def save_contour(grid_path, csv_path):
 
     fig, ax = plt.subplots()
     contour = ax.contour(ratio, gates, mean, levels=[ndtri(target)])
-    segments = contour.allsegs[0]
+    segments = [segment for segment in contour.allsegs[0] if len(segment)]
     plt.close(fig)
-    segment = max(segments, key=len)
 
     with Path(csv_path).open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
@@ -137,6 +137,9 @@ def save_contour(grid_path, csv_path):
             "segment", "point_index", "two_qubit_gate_ratio",
             "total_gates", "target_probability",
         ])
+        if not segments:
+            return None
+        segment = max(segments, key=len)
         for index, (ratio_value, gates_value) in enumerate(segment):
             writer.writerow([0, index, ratio_value, gates_value, target])
 
@@ -212,7 +215,11 @@ def objective(trial, prepared, references):
     losses = {}
     for name in DATASETS:
         contour, contour_path = run_dataset(name, prepared[name], backend, run_dir)
-        losses[name] = float(chamfer_loss(references[name], contour))
+        losses[name] = (
+            NO_CONTOUR_LOSS
+            if contour is None
+            else float(chamfer_loss(references[name], contour))
+        )
         trial.set_user_attr(f"{name}_contour", str(contour_path))
     for name, loss in losses.items():
         trial.set_user_attr(f"{name}_loss", loss)
