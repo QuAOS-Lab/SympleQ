@@ -39,8 +39,9 @@ from sympleq.applications.randomized_benchmarking.experiments.GP_Levelset_estima
 from sympleq.integrations.quantinuum.utils import NATIVE_GATES_SET
 
 
-ROOT = Path("Personal/Data/optuna_opt_new")
-SUMMARY_CSV = ROOT / "optuna_trials.csv"
+ROOT = Path("Personal/Data/optuna_opt")
+RES_ROOT = Path("Personal/Data/optuna_opt_run2")
+SUMMARY_CSV = RES_ROOT / "optuna_trials.csv"
 N_TRIALS = 2000
 GRID_GATES_BOUNDS = (100, 3000)
 GRID_RATIO_BOUNDS = (0.1, 0.97)
@@ -211,7 +212,7 @@ def objective(trial, prepared, references):
         rng=default_rng(42),
         **params,
     )
-    run_dir = ROOT / f"trial_{trial.number:04d}"
+    run_dir = RES_ROOT / f"trial_{trial.number:04d}"
     losses = {}
     for name in DATASETS:
         contour, contour_path = run_dataset(name, prepared[name], backend, run_dir)
@@ -249,6 +250,7 @@ def save_trial(study, trial):
 
 if __name__ == "__main__":
     ROOT.mkdir(parents=True, exist_ok=True)
+    RES_ROOT.mkdir(parents=True, exist_ok=True)
     prepared = {name: build_circuits(paths[0]) for name, paths in DATASETS.items()}
     references = {name: load_reference(paths[1]) for name, paths in DATASETS.items()}
 
