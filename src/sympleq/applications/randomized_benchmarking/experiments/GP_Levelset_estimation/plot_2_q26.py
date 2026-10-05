@@ -51,6 +51,15 @@ Q26_FAKE_H_H21E_GRID_PATH = Path(
     r"\FLE_V_warp_20260827_121746"
     r"\reconstructed_native_gateset_measurement_019_globalsur_20260831_075831_968266_actual_gates_gp_grid.npz"
 )
+Q26_FAKE_H_SYMPLEQ_JSON_PATH = Path(
+    r"Personal\FLE\H_wrapper\SympleqBackend\q26\seed_42"
+    r"\FLE_H_wrapper_20260929_160718\FLE_20260929_160718_actual_gates.json"
+)
+Q26_FAKE_H_SYMPLEQ_GRID_PATH = Path(
+    r"Personal\FLE\H_wrapper\SympleqBackend\q26\seed_42"
+    r"\FLE_H_wrapper_20260929_160718"
+    r"\FLE_20260929_160718_actual_gates_gp_grid.npz"
+)
 
 # Without Fake Hadamard
 Q26_H21_JSON_PATH = Path(
@@ -90,8 +99,10 @@ Q26_H22E_GRID_PATH = Path(
     r"\measurement_045_globalsur_20260831_054718_316943_actual_gates_gp_grid.npz"
 )
 
-GATES_AXIS_LIMITS = (200.0, 2000.0)
-RATIO_AXIS_LIMITS = (0.1, 0.9)
+WITH_FAKE_H_GATES_AXIS_LIMITS = (200.0, 1700.0)
+WITH_FAKE_H_RATIO_AXIS_LIMITS = (0.1, 0.75)
+WITHOUT_FAKE_H_GATES_AXIS_LIMITS = (300.0, 3000.0)
+WITHOUT_FAKE_H_RATIO_AXIS_LIMITS = (0.1, 0.9)
 SHOW_PREDICTED_FIDELITY_HUE = False
 SHOW_UNCERTAINTY = True
 SIGMA_ALPHA = 0.22
@@ -162,12 +173,19 @@ def load_saved_contour(
     sigma_level: float,
 ) -> np.ndarray:
     with contour_path.open("r", newline="", encoding="utf-8") as handle:
-        for row in csv.DictReader(handle):
-            if np.isclose(float(row["qubit"]), qubit) and np.isclose(
-                float(row["sigma_level"]), sigma_level
+        reader = csv.reader(handle)
+        next(reader)
+        for row in reader:
+            if len(row) == 2:
+                row_qubit = qubit
+                row_sigma, contour_text = row
+            else:
+                row_qubit, row_sigma, contour_text = row[:3]
+            if np.isclose(float(row_qubit), qubit) and np.isclose(
+                float(row_sigma), sigma_level
             ):
                 values = np.fromstring(
-                    row["contour"]
+                    contour_text
                     .replace("[", " ")
                     .replace("]", " ")
                     .replace("\n", " "),
@@ -347,6 +365,8 @@ def make_plot(
     *,
     title: str,
     output_path: Path,
+    gates_axis_limits: tuple[float, float],
+    ratio_axis_limits: tuple[float, float],
     sympleq_overlays: tuple[dict, ...] = (),
 ) -> None:
     fig, ax = plt.subplots(1, 1, figsize=(8.0, 5.6))
@@ -361,8 +381,8 @@ def make_plot(
         add_sympleq_contours(ax, **overlay)
 
     ax.set_yscale("log")
-    ax.set_xlim(*RATIO_AXIS_LIMITS)
-    ax.set_ylim(*GATES_AXIS_LIMITS)
+    ax.set_xlim(*ratio_axis_limits)
+    ax.set_ylim(*gates_axis_limits)
     ax.set_xlabel("Two-qubit gate ratio")
     ax.set_ylabel("Total gates")
     ax.set_title(title, fontsize=10, fontweight="bold")
@@ -391,6 +411,15 @@ def main() -> None:
             "color": "cornflowerblue",
             "linestyle": "--",
             "show_points": SHOW_POINTS_FAKE_H_H21E,
+        },
+        {
+            "label": "SympleQ with V-wrap",
+            "json": Q26_FAKE_H_SYMPLEQ_JSON_PATH,
+            "grid": Q26_FAKE_H_SYMPLEQ_GRID_PATH,
+            "color": "#6563ee",
+            "linestyle": "-.",
+            "sigma": 2.0,
+            "show_points": False,
         },
     )
     without_fake_h = (
@@ -434,11 +463,15 @@ def main() -> None:
         with_fake_h,
         title="With Fake Hadamard",
         output_path=OUT_PATH_WITH_FAKE_H,
+        gates_axis_limits=WITH_FAKE_H_GATES_AXIS_LIMITS,
+        ratio_axis_limits=WITH_FAKE_H_RATIO_AXIS_LIMITS,
     )
     make_plot(
         without_fake_h,
         title="Without Fake Hadamard",
         output_path=OUT_PATH_WITHOUT_FAKE_H,
+        gates_axis_limits=WITHOUT_FAKE_H_GATES_AXIS_LIMITS,
+        ratio_axis_limits=WITHOUT_FAKE_H_RATIO_AXIS_LIMITS,
         sympleq_overlays=(
             {
                 "contour_path": H2_1_SYMPLEQ_CONTOUR_PATH,

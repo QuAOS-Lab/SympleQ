@@ -40,6 +40,15 @@ Q56_FAKE_H_GRID_PATH = Path(
     r"Personal\FLE\H_wrapper\H2_1\q56\seed_42\FLE_H_wrapper_20260825_160151"
     r"\measurement_026_globalsur_20260827_210327_151079_actual_gates_gp_grid.npz"
 )
+Q56_FAKE_H_SYMPLEQ_JSON_PATH = Path(
+    r"Personal\FLE\H_wrapper\SympleqBackend\q56\seed_42"
+    r"\FLE_H_wrapper_20260929_165741\FLE_20260929_165741_actual_gates.json"
+)
+Q56_FAKE_H_SYMPLEQ_GRID_PATH = Path(
+    r"Personal\FLE\H_wrapper\SympleqBackend\q56\seed_42"
+    r"\FLE_H_wrapper_20260929_165741"
+    r"\FLE_20260929_165741_actual_gates_gp_grid.npz"
+)
 
 Q56_ORDINARY_JSON_PATH = Path(
     r"Personal\Data\accumulated\H2-1"
@@ -62,8 +71,10 @@ Q56_H2_2_GRID_PATH = Path(
     r"\accumulated_actualgr_H2-2_fle_costaware_20260813_175532_q56_gp_grid.npz"
 )
 
-GATES_AXIS_LIMITS = (200.0, 2000.0)
-RATIO_AXIS_LIMITS = (0.1, 0.9)
+WITHOUT_FAKE_H_GATES_AXIS_LIMITS = (350.0, 2000.0)
+WITHOUT_FAKE_H_RATIO_AXIS_LIMITS = (0.1, 0.75)
+WITH_FAKE_H_GATES_AXIS_LIMITS = (200.0, 2000.0)
+WITH_FAKE_H_RATIO_AXIS_LIMITS = (0.1, 0.9)
 SHOW_PREDICTED_FIDELITY_HUE = False
 SHOW_UNCERTAINTY = True
 SHOW_DATA_POINTS_WITH_FAKE_H = False
@@ -131,12 +142,19 @@ def load_saved_contour(
     sigma_level: float,
 ) -> np.ndarray:
     with contour_path.open("r", newline="", encoding="utf-8") as handle:
-        for row in csv.DictReader(handle):
-            if np.isclose(float(row["qubit"]), qubit) and np.isclose(
-                float(row["sigma_level"]), sigma_level
+        reader = csv.reader(handle)
+        next(reader)
+        for row in reader:
+            if len(row) == 2:
+                row_qubit = qubit
+                row_sigma, contour_text = row
+            else:
+                row_qubit, row_sigma, contour_text = row[:3]
+            if np.isclose(float(row_qubit), qubit) and np.isclose(
+                float(row_sigma), sigma_level
             ):
                 values = np.fromstring(
-                    row["contour"]
+                    contour_text
                     .replace("[", " ")
                     .replace("]", " ")
                     .replace("\n", " "),
@@ -194,6 +212,7 @@ def plot_panel(
     contour_csv_path: Path | None,
     label: str = "H2-1",
     color: str = H2_1_COLOR,
+    linestyle: str = "-",
 ) -> None:
     grid = np.load(grid_path)
     ratio_grid = np.asarray(grid["ratio_grid"], dtype=float)
@@ -247,7 +266,7 @@ def plot_panel(
         latent_mean,
         levels=[latent_target],
         colors=color,
-        linestyles="-",
+        linestyles=linestyle,
         linewidths=2.2,
         zorder=6,
     )
@@ -257,7 +276,7 @@ def plot_panel(
         [],
         [],
         color=color,
-        linestyle="-",
+        linestyle=linestyle,
         linewidth=2.2,
         label=f"{label} GP mean p={target:g}",
     )
@@ -288,8 +307,6 @@ def plot_panel(
         ax.plot([], [], color="none", label=f"measured data: {observations} obs")
 
     ax.set_yscale("log")
-    ax.set_xlim(*RATIO_AXIS_LIMITS)
-    ax.set_ylim(*GATES_AXIS_LIMITS)
     ax.set_xlabel("Two-qubit gate ratio")
     ax.set_title(title, fontsize=10, fontweight="bold")
     ax.legend(loc="upper right", fontsize=8, frameon=True, framealpha=0.9)
@@ -306,6 +323,21 @@ def main() -> None:
         show_points=SHOW_DATA_POINTS_WITH_FAKE_H,
         contour_csv_path=OUT_CSV_WITH_FAKE_H,
     )
+    plot_panel(
+        fig,
+        ax,
+        json_path=Q56_FAKE_H_SYMPLEQ_JSON_PATH,
+        grid_path=Q56_FAKE_H_SYMPLEQ_GRID_PATH,
+        title="With Fake Hadamard",
+        show_points=False,
+        contour_csv_path=None,
+        label="SympleQ with V-wrap",
+        color="#6563ee",
+        linestyle="-.",
+    )
+    ax.set_xlim(*WITH_FAKE_H_RATIO_AXIS_LIMITS)
+    ax.set_ylim(*WITH_FAKE_H_GATES_AXIS_LIMITS)
+    ax.legend(loc="upper right", fontsize=8, frameon=True, framealpha=0.9)
     ax.set_ylabel("Total gates")
     fig.tight_layout()
     OUT_PATH_WITH_FAKE_H.parent.mkdir(parents=True, exist_ok=True)
@@ -347,6 +379,8 @@ def main() -> None:
         label="SympleQ H2-2 trial 131",
         color="lightcoral",
     )
+    ax.set_xlim(*WITHOUT_FAKE_H_RATIO_AXIS_LIMITS)
+    ax.set_ylim(*WITHOUT_FAKE_H_GATES_AXIS_LIMITS)
     ax.legend(loc="upper right", fontsize=8, frameon=True, framealpha=0.9)
     ax.set_ylabel("Total gates")
     fig.tight_layout()
