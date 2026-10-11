@@ -25,6 +25,7 @@ REM Install dependencies
 python -m pip install --upgrade pip
 python -m pip install uv
 uv pip install -e ".[development]"
+python -m pip install --upgrade -i https://test.pypi.org/simple/ sympleq-light
 
 REM Optional package groups
 echo.

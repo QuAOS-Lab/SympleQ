@@ -19,6 +19,7 @@ source "$SRC_VENV/bin/activate"
 python -m pip install --upgrade pip
 python -m pip install uv
 uv pip install -e ".[development]"
+python -m pip install --upgrade -i https://test.pypi.org/simple/ sympleq-light
 
 # Optional package groups
 echo

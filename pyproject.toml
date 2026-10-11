@@ -25,6 +25,9 @@ license = { text = "MIT" }
 requires-python = ">=3.12"
 
 [project.optional-dependencies]
+light = [
+    "sympleq-light",
+]
 development = [
     "uv>=0.5.0",
     "autopep8==2.2.0",
