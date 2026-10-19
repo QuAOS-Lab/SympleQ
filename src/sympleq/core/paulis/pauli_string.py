@@ -5,6 +5,7 @@ import re
 import scipy.sparse as sp
 
 from sympleq import bases_to_int
+from .protocols.p_pauli_string import PPauliString
 from .pauli_object import PauliObject
 from .constants import DEFAULT_QUDIT_DIMENSION
 
@@ -12,7 +13,7 @@ if TYPE_CHECKING:
     from .pauli_sum import PauliSum
 
 
-class PauliString(PauliObject):
+class PauliString(PauliObject, PPauliString):
     @classmethod
     def from_exponents(cls, x_exp: list[int] | np.ndarray | int, z_exp: list[int] | np.ndarray | int,
                        dimensions: list[int] | np.ndarray | int | None = None) -> PauliString:
