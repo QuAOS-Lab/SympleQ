@@ -408,10 +408,13 @@ def rewrite_ca_seed(
     write: bool,
     overwrite: bool,
     ca_mismatch: str,
+    batch_limit: int | None = None,
+    output_path: Path | None = None,
 ) -> RewriteReport:
     data_path = seed_folder / "CostAware_restartable.json"
     checkpoint_path = seed_folder / "CostAware_restartable_checkpoint.json"
-    output_path = seed_folder / ACTUALGR / "CostAware_restartable_actual_gates.json"
+    if output_path is None:
+        output_path = seed_folder / ACTUALGR / "CostAware_restartable_actual_gates.json"
 
     if not data_path.exists() or not checkpoint_path.exists():
         return RewriteReport(
@@ -434,6 +437,10 @@ def rewrite_ca_seed(
     seed = seed_from_path(seed_folder)
     source_payload = json.loads(data_path.read_text(encoding="utf-8"))
     checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+    all_batches = list(checkpoint.get("batch_history", []))
+    selected_batches = all_batches if batch_limit is None else all_batches[:batch_limit]
+    is_partial_checkpoint = len(selected_batches) < len(all_batches)
+    spent_hqc = sum(float(batch.get("cost_hqc", 0.0)) for batch in selected_batches)
 
     templates: dict[tuple, dict] = {}
     grouped_counts: dict[tuple, Counter[bool]] = {}
@@ -442,7 +449,7 @@ def rewrite_ca_seed(
     next_progress = 50
 
     print(f"[rewrite][CA] seed={seed} folder={seed_folder}")
-    for batch in checkpoint.get("batch_history", []):
+    for batch in selected_batches:
         for request in batch.get("requests", []):
             config_record = request.get("config")
             if not isinstance(config_record, dict):
@@ -466,7 +473,7 @@ def rewrite_ca_seed(
 
     source_records = source_payload.get("data", [])
     source_observations = total_observations(source_records)
-    if source_observations != observations:
+    if source_observations != observations and not is_partial_checkpoint:
         message = (
             f"source observations ({source_observations}) do not match "
             f"checkpoint observations ({observations})"
@@ -493,13 +500,22 @@ def rewrite_ca_seed(
         print(f"[warning][CA] {seed_folder}: {message}; using checkpoint")
 
     source_warning = None
-    if source_observations != observations:
+    if is_partial_checkpoint:
+        source_warning = (
+            "Intermediate cumulative checkpoint reconstructed from a batch-history "
+            "prefix."
+        )
+    elif source_observations != observations:
         source_warning = (
             "Output records were reconstructed from checkpoint measurements; "
             "source JSON data count was stale or incomplete."
         )
 
-    if source_observations != observations and ca_mismatch not in {"checkpoint", "skip"}:
+    if (
+        source_observations != observations
+        and not is_partial_checkpoint
+        and ca_mismatch not in {"checkpoint", "skip"}
+    ):
         raise RuntimeError(
             f"{seed_folder}: source observations ({source_observations}) do not "
             f"match checkpoint observations ({observations})."
@@ -508,6 +524,14 @@ def rewrite_ca_seed(
     output_records = output_records_from_groups(templates, grouped_counts)
     rewritten = copy.deepcopy(source_payload)
     rewritten["data"] = output_records
+    hqc_budget = float(checkpoint.get("hqc_budget", spent_hqc))
+    rewritten["experiment"] = {
+        "phase": "costaware",
+        "step": len(selected_batches),
+        "spent_hqc": spent_hqc,
+        "remaining_hqc": max(0.0, hqc_budget - spent_hqc),
+        "hqc_budget": hqc_budget,
+    }
     rewritten["actual_gates_rewrite"] = {
         "source_json": str(data_path),
         "checkpoint_json": str(checkpoint_path),
@@ -520,8 +544,14 @@ def rewrite_ca_seed(
         "observations": observations,
         "source_observations": source_observations,
         "checkpoint_observations": observations,
+        "checkpoint_batches": len(selected_batches),
+        "total_checkpoint_batches": len(all_batches),
+        "spent_hqc": spent_hqc,
+        "partial_checkpoint": is_partial_checkpoint,
         "source_checkpoint_mismatch": source_observations != observations,
-        "source_checkpoint_mismatch_policy": ca_mismatch,
+        "source_checkpoint_mismatch_policy": (
+            "checkpoint-prefix" if is_partial_checkpoint else ca_mismatch
+        ),
         "source_checkpoint_mismatch_warning": source_warning,
         "nominal_1qb_gates": nominal_1q,
         "nominal_2qb_gates": nominal_2q,
@@ -547,6 +577,55 @@ def rewrite_ca_seed(
         checkpoint_observations=observations,
         reason=source_warning or "",
     )
+
+
+def rewrite_ca_checkpoints(
+    seed_folder: Path,
+    *,
+    write: bool,
+    overwrite: bool,
+    skip_existing: bool,
+    ca_mismatch: str,
+) -> list[RewriteReport]:
+    checkpoint_path = seed_folder / "CostAware_restartable_checkpoint.json"
+    if not checkpoint_path.exists():
+        return [
+            rewrite_ca_seed(
+                seed_folder,
+                write=write,
+                overwrite=overwrite,
+                ca_mismatch=ca_mismatch,
+            )
+        ]
+
+    checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+    batches = list(checkpoint.get("batch_history", []))
+    reports: list[RewriteReport] = []
+    for batch_index in range(1, len(batches) + 1):
+        if batch_index == len(batches):
+            output_path = (
+                seed_folder / ACTUALGR / "CostAware_restartable_actual_gates.json"
+            )
+        else:
+            output_path = (
+                seed_folder
+                / ACTUALGR
+                / f"CostAware_batch_{batch_index:03d}_actual_gates.json"
+            )
+        if skip_existing and output_path.exists():
+            print(f"[skip-existing] {output_path}")
+            continue
+        reports.append(
+            rewrite_ca_seed(
+                seed_folder,
+                write=write,
+                overwrite=overwrite,
+                ca_mismatch=ca_mismatch,
+                batch_limit=batch_index,
+                output_path=output_path,
+            )
+        )
+    return reports
 
 
 def write_payload(output: Path, payload: dict, *, write: bool, overwrite: bool) -> None:
@@ -609,6 +688,7 @@ def print_status_report(
     ca_devices: set[str],
     q_folders: set[str] | None,
     all_fle_checkpoints: bool,
+    all_ca_checkpoints: bool,
     fle_plan: list[tuple[Path, Path, int]],
     ca_plan: list[Path],
     write: bool,
@@ -634,6 +714,7 @@ def print_status_report(
     print(f"[status] Cost-aware devices    = {', '.join(sorted(ca_devices)) or 'none'}")
     print(f"[status] FLE q folders         = {q_label}")
     print(f"[status] all FLE checkpoints   = {all_fle_checkpoints}")
+    print(f"[status] all CA checkpoints    = {all_ca_checkpoints}")
     print(f"[status] planned FLE rewrites  = {len(fle_plan)}")
     print(f"[status] planned CA rewrites   = {len(ca_plan)}")
     print("-" * 88)
@@ -702,7 +783,7 @@ def print_final_summary(reports: list[RewriteReport], *, write: bool) -> None:
 
 def parse_targets(values: list[str]) -> tuple[set[str], set[str]]:
     if "all" in values:
-        return {"H2_1", "H2_2"}, {"H2-2"}
+        return {"H2_1", "H2_2"}, {"H2-1", "H2-2"}
 
     fle_devices: set[str] = set()
     ca_devices: set[str] = set()
@@ -711,6 +792,8 @@ def parse_targets(values: list[str]) -> tuple[set[str], set[str]]:
             fle_devices.add("H2_1")
         elif value == "fle-h2-2":
             fle_devices.add("H2_2")
+        elif value == "ca-h2-1":
+            ca_devices.add("H2-1")
         elif value == "ca-h2-2":
             ca_devices.add("H2-2")
         else:
@@ -725,7 +808,7 @@ def main(argv: list[str] | None = None) -> int:
         "--targets",
         nargs="+",
         default=["all"],
-        choices=["all", "fle-h2-1", "fle-h2-2", "ca-h2-2"],
+        choices=["all", "fle-h2-1", "fle-h2-2", "ca-h2-1", "ca-h2-2"],
     )
     parser.add_argument(
         "--write",
@@ -744,7 +827,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--skip-existing",
         action="store_true",
-        help="Skip FLE rewrites whose ActualGR output JSON already exists.",
+        help="Skip rewrites whose ActualGR output JSON already exists.",
     )
     parser.add_argument(
         "--allow-ambiguous-fle",
@@ -779,6 +862,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Rewrite every FLE measurement checkpoint instead of only the latest.",
     )
+    parser.add_argument(
+        "--all-ca-checkpoints",
+        action="store_true",
+        help="Rewrite every cumulative Cost-aware batch checkpoint.",
+    )
     args = parser.parse_args(argv)
     if args.allow_ambiguous_fle and args.drop_ambiguous_fle:
         parser.error("--allow-ambiguous-fle and --drop-ambiguous-fle are mutually exclusive")
@@ -812,6 +900,7 @@ def main(argv: list[str] | None = None) -> int:
         ca_devices=ca_devices,
         q_folders=q_folders,
         all_fle_checkpoints=args.all_fle_checkpoints,
+        all_ca_checkpoints=args.all_ca_checkpoints,
         fle_plan=fle_plan,
         ca_plan=ca_plan,
         write=args.write,
@@ -841,6 +930,22 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     for seed_folder in ca_plan:
+        if args.all_ca_checkpoints:
+            reports.extend(
+                rewrite_ca_checkpoints(
+                    seed_folder,
+                    write=args.write,
+                    overwrite=args.overwrite,
+                    skip_existing=args.skip_existing,
+                    ca_mismatch=args.ca_mismatch,
+                )
+            )
+            continue
+
+        output = seed_folder / ACTUALGR / "CostAware_restartable_actual_gates.json"
+        if args.skip_existing and output.exists():
+            print(f"[skip-existing] {output}")
+            continue
         reports.append(
             rewrite_ca_seed(
                 seed_folder,

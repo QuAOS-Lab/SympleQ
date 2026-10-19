@@ -60,6 +60,13 @@ Q26_FAKE_H_SYMPLEQ_GRID_PATH = Path(
     r"\FLE_H_wrapper_20260929_160718"
     r"\FLE_20260929_160718_actual_gates_gp_grid.npz"
 )
+Q26_OPTUNA_SYMPLEQ_JSON_PATH = Path(
+    r"Personal\Data\optuna_opt\trial_1386\q26_with_vwrap\sympleq.json"
+)
+Q26_OPTUNA_SYMPLEQ_GRID_PATH = Path(
+    r"Personal\Data\optuna_opt\trial_1386\q26_with_vwrap"
+    r"\sympleq_gp_grid.npz"
+)
 
 # Without Fake Hadamard
 Q26_H21_JSON_PATH = Path(
@@ -79,6 +86,13 @@ Q26_H21E_JSON_PATH = Path(
 Q26_H21E_GRID_PATH = Path(
     r"Personal\FLE\H2_1E\q26\seed_72\FLE_20260827_120009"
     r"\reconstructed_native_gateset_measurement_012_globalsur_20260829_170736_456309_actual_gates_gp_grid.npz"
+)
+Q26_SYMPLEQ_JSON_PATH = Path(
+    r"Personal\Data\optuna_opt\trial_1386\q26_without_vwrap\sympleq.json"
+)
+Q26_SYMPLEQ_GRID_PATH = Path(
+    r"Personal\Data\optuna_opt\trial_1386\q26_without_vwrap"
+    r"\sympleq_gp_grid.npz"
 )
 Q26_H22_JSON_PATH = Path(
     r"Personal\Data\accumulated\H2-2"
@@ -332,10 +346,10 @@ def add_dataset(fig, ax, dataset: dict, *, show_hue: bool) -> None:
         label=f"{label} GP mean p={target:g}",
     )
 
-    failures_x, failures_y, successes_x, successes_y, observations = load_points(
-        Path(dataset["json"])
-    )
     if bool(dataset["show_points"]):
+        failures_x, failures_y, successes_x, successes_y, observations = load_points(
+            Path(dataset["json"])
+        )
         ax.scatter(
             failures_x,
             failures_y,
@@ -413,9 +427,9 @@ def main() -> None:
             "show_points": SHOW_POINTS_FAKE_H_H21E,
         },
         {
-            "label": "SympleQ with V-wrap",
-            "json": Q26_FAKE_H_SYMPLEQ_JSON_PATH,
-            "grid": Q26_FAKE_H_SYMPLEQ_GRID_PATH,
+            "label": "SympleQ trial 1386 with V-wrap",
+            "json": Q26_OPTUNA_SYMPLEQ_JSON_PATH,
+            "grid": Q26_OPTUNA_SYMPLEQ_GRID_PATH,
             "color": "#6563ee",
             "linestyle": "-.",
             "sigma": 2.0,
@@ -442,20 +456,13 @@ def main() -> None:
             "show_points": SHOW_POINTS_H21E,
         },
         {
-            "label": "H2-2",
-            "json": Q26_H22_JSON_PATH,
-            "grid": Q26_H22_GRID_PATH,
-            "color": "darkred",
-            "linestyle": "-",
-            "show_points": SHOW_POINTS_H22,
-        },
-        {
-            "label": "H2-2E",
-            "json": Q26_H22E_JSON_PATH,
-            "grid": Q26_H22E_GRID_PATH,
-            "color": "lightcoral",
-            "linestyle": "--",
-            "show_points": SHOW_POINTS_H22E,
+            "label": "SympleQ trial 1386",
+            "json": Q26_SYMPLEQ_JSON_PATH,
+            "grid": Q26_SYMPLEQ_GRID_PATH,
+            "color": "#6563ee",
+            "linestyle": "-.",
+            "sigma": 2.0,
+            "show_points": False,
         },
     )
 
@@ -472,20 +479,6 @@ def main() -> None:
         output_path=OUT_PATH_WITHOUT_FAKE_H,
         gates_axis_limits=WITHOUT_FAKE_H_GATES_AXIS_LIMITS,
         ratio_axis_limits=WITHOUT_FAKE_H_RATIO_AXIS_LIMITS,
-        sympleq_overlays=(
-            {
-                "contour_path": H2_1_SYMPLEQ_CONTOUR_PATH,
-                "qubit": 26.0,
-                "label": "SympleQ H2-1 trial 123",
-                "color": "dodgerblue",
-            },
-            {
-                "contour_path": H2_2_SYMPLEQ_CONTOUR_PATH,
-                "qubit": 26.0,
-                "label": "SympleQ H2-2 trial 131",
-                "color": "lightcoral",
-            },
-        ),
     )
     plt.show()
 

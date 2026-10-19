@@ -49,6 +49,13 @@ Q56_FAKE_H_SYMPLEQ_GRID_PATH = Path(
     r"\FLE_H_wrapper_20260929_165741"
     r"\FLE_20260929_165741_actual_gates_gp_grid.npz"
 )
+Q56_OPTUNA_SYMPLEQ_JSON_PATH = Path(
+    r"Personal\Data\optuna_opt\trial_1386\q56_with_vwrap\sympleq.json"
+)
+Q56_OPTUNA_SYMPLEQ_GRID_PATH = Path(
+    r"Personal\Data\optuna_opt\trial_1386\q56_with_vwrap"
+    r"\sympleq_gp_grid.npz"
+)
 
 Q56_ORDINARY_JSON_PATH = Path(
     r"Personal\Data\accumulated\H2-1"
@@ -59,6 +66,13 @@ Q56_ORDINARY_GRID_PATH = Path(
     r"Personal\Data\accumulated\H2-1"
     r"\accumulated_actualgr_H2-1_fle_costaware_20260813_175523_q_slices"
     r"\accumulated_actualgr_H2-1_fle_costaware_20260813_175523_q56_gp_grid.npz"
+)
+Q56_SYMPLEQ_JSON_PATH = Path(
+    r"Personal\Data\optuna_opt\trial_1386\q56_without_vwrap\sympleq.json"
+)
+Q56_SYMPLEQ_GRID_PATH = Path(
+    r"Personal\Data\optuna_opt\trial_1386\q56_without_vwrap"
+    r"\sympleq_gp_grid.npz"
 )
 Q56_H2_2_JSON_PATH = Path(
     r"Personal\Data\accumulated\H2-2"
@@ -281,8 +295,10 @@ def plot_panel(
         label=f"{label} GP mean p={target:g}",
     )
 
-    failures_x, failures_y, successes_x, successes_y, observations = load_points(json_path)
     if show_points:
+        failures_x, failures_y, successes_x, successes_y, observations = load_points(
+            json_path
+        )
         ax.scatter(
             failures_x,
             failures_y,
@@ -326,12 +342,12 @@ def main() -> None:
     plot_panel(
         fig,
         ax,
-        json_path=Q56_FAKE_H_SYMPLEQ_JSON_PATH,
-        grid_path=Q56_FAKE_H_SYMPLEQ_GRID_PATH,
+        json_path=Q56_OPTUNA_SYMPLEQ_JSON_PATH,
+        grid_path=Q56_OPTUNA_SYMPLEQ_GRID_PATH,
         title="With Fake Hadamard",
         show_points=False,
         contour_csv_path=None,
-        label="SympleQ with V-wrap",
+        label="SympleQ trial 1386 with V-wrap",
         color="#6563ee",
         linestyle="-.",
     )
@@ -357,27 +373,14 @@ def main() -> None:
     plot_panel(
         fig,
         ax,
-        json_path=Q56_H2_2_JSON_PATH,
-        grid_path=Q56_H2_2_GRID_PATH,
+        json_path=Q56_SYMPLEQ_JSON_PATH,
+        grid_path=Q56_SYMPLEQ_GRID_PATH,
         title="Without Fake Hadamard",
         show_points=False,
         contour_csv_path=None,
-        label="H2-2",
-        color=H2_2_COLOR,
-    )
-    add_sympleq_contours(
-        ax,
-        contour_path=H2_1_SYMPLEQ_CONTOUR_PATH,
-        qubit=56.0,
-        label="SympleQ H2-1 trial 123",
-        color="dodgerblue",
-    )
-    add_sympleq_contours(
-        ax,
-        contour_path=H2_2_SYMPLEQ_CONTOUR_PATH,
-        qubit=56.0,
-        label="SympleQ H2-2 trial 131",
-        color="lightcoral",
+        label="SympleQ trial 1386",
+        color="#6563ee",
+        linestyle="-.",
     )
     ax.set_xlim(*WITHOUT_FAKE_H_RATIO_AXIS_LIMITS)
     ax.set_ylim(*WITHOUT_FAKE_H_GATES_AXIS_LIMITS)
