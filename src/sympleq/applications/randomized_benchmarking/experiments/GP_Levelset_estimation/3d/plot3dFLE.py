@@ -130,6 +130,12 @@ def plot_fle_isosurface_3d_matplotlib(
     json_path: str | Path = RMB_JSON_PATH,
     grid_path: str | Path | None = GP_GRID_PATH,
     png_path: str | Path | None = PNG_PATH,
+    *,
+    xlim: tuple[float, float] = (RATIO_AXIS_MIN, RATIO_AXIS_MAX),
+    ylim: tuple[float, float] = (20, 60),
+    zlim: tuple[float, float] = (GATE_AXIS_MIN_LOG10, GATE_AXIS_MAX_LOG10),
+    legend_labels: dict[str, str | None] | None = None,
+    show: bool = True,
 ) -> None:
     input_path = Path(json_path)
 
@@ -177,8 +183,8 @@ def plot_fle_isosurface_3d_matplotlib(
     ratio_axis = axis_from_grid(ratio_grid, 1)
     log_gates_axis = np.log10(axis_from_grid(gates_grid, 2))
     gate_mask = (
-        (log_gates_axis >= GATE_AXIS_MIN_LOG10)
-        & (log_gates_axis <= GATE_AXIS_MAX_LOG10)
+        (log_gates_axis >= zlim[0])
+        & (log_gates_axis <= zlim[1])
     )
     if np.count_nonzero(gate_mask) < 2:
         raise ValueError("Fewer than two gate-grid points lie inside the plot range")
@@ -307,7 +313,7 @@ def plot_fle_isosurface_3d_matplotlib(
                 qubits[~outcomes],
                 np.log10(gates[~outcomes]),
                 marker="x",
-                color="seagreen",
+                color="black",
                 s=36,
                 linewidths=1.4,
                 depthshade=False,
@@ -320,23 +326,31 @@ def plot_fle_isosurface_3d_matplotlib(
                 np.log10(gates[outcomes]),
                 marker="o",
                 facecolors="none",
-                edgecolors="mediumpurple",
+                edgecolors="black",
                 s=34,
                 linewidths=1.5,
                 depthshade=False,
                 label="Success",
             )
 
-    ax.set_xlim(RATIO_AXIS_MIN, RATIO_AXIS_MAX)
-    ax.set_ylim(20, 60)
-    ax.set_zlim(GATE_AXIS_MIN_LOG10, GATE_AXIS_MAX_LOG10)
+    ax.set_xlim(*xlim)
+    ax.set_ylim(*ylim)
+    ax.set_zlim(*zlim)
     ax.set_xlabel("Two-qubit gate ratio")
     ax.set_ylabel("Qubits", labelpad=10)
     ax.set_zlabel("log10(total gates)")
-    title_prefix = "3D PULSE level set" if native_costaware else "3D FLARE level set"
-    ax.set_title(f"{title_prefix} | P(success)={target:g}")
+    # title_prefix = "3D PULSE level set" if native_costaware else "3D FLARE level set"
+    # ax.set_title(f"{title_prefix} | P(success)={target:g}")
     ax.view_init(elev=24, azim=-60)
-    ax.legend(loc="best", fontsize=8)
+    handles, labels = ax.get_legend_handles_labels()
+    if legend_labels is not None:
+        entries = [
+            (handle, legend_labels.get(label, label))
+            for handle, label in zip(handles, labels)
+        ]
+        handles = [handle for handle, label in entries if label is not None]
+        labels = [label for _, label in entries if label is not None]
+    ax.legend(handles, labels, loc="best", fontsize=8)
     fig.tight_layout(rect=(0.0, 0.0, 0.94, 1.0))
 
     png_path.parent.mkdir(parents=True, exist_ok=True)
@@ -350,7 +364,8 @@ def plot_fle_isosurface_3d_matplotlib(
     )
     print(f"[grid] target: {target}")
     print(f"[saved] Matplotlib 3D isosurface: {png_path}")
-    plt.show()
+    if show:
+        plt.show()
 
 
 if __name__ == "__main__":
