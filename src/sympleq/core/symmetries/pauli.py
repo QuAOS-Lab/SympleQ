@@ -334,7 +334,7 @@ def symplectic_reduction_iter_qudit_(P, C, pivots, current_qudit) -> tuple[Circu
     return C, pivots
 
 
-def pauli_reduce(hamiltonian: PauliSum) -> ConditionalHamiltonian2:
+def pauli_reduce(hamiltonian: PauliSum) -> tuple[ConditionalHamiltonian2, Circuit]:
     """
     Applies the symplectic reduction algorithm to a PauliSum and returns the reduced hamiltonian and the
     conditioned hamiltonians.
@@ -372,4 +372,4 @@ def pauli_reduce(hamiltonian: PauliSum) -> ConditionalHamiltonian2:
     T = Circuit.empty(h_red.dimensions).composite_gate()
     conditional_hamiltonian = ConditionalHamiltonian2(h_red, S, T)
 
-    return conditional_hamiltonian
+    return (conditional_hamiltonian, C)
