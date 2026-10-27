@@ -812,7 +812,6 @@ def gf2_inv(matrix: IntNDArray) -> IntNDArray:
 
 
 def gf_rref(matrix: IntNDArray, dimension: int = 2) -> tuple[IntNDArray, IntNDArray, IntNDArray, int]:
-    """
     matrix = np.asarray(matrix, dtype=np.uint8).copy() & 1
     if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:
         raise np.linalg.LinAlgError("GF2 inverse requires square matrix")
