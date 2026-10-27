@@ -26,12 +26,14 @@ import plot1
 OUTPUT_PATH = plot1.OUTPUT_DIR / "plot1_combined.pdf"
 
 PAGE_WIDTH = 1200.0
-PAGE_HEIGHT = 925.0
+PAGE_HEIGHT = 900.0
 PAGE_MARGIN = 8.0
 COLUMN_GAP = 8.0
 SUBPANEL_GAP = 4.0
-TOP_PANEL_HEIGHT = 388.0
-ROW_GAP = 8.0
+TOP_PANEL_HEIGHT = 340.0
+TOP_PANEL_MARGIN = 4.0
+ROW_GAP = 5.0
+PANEL_LABEL_HEIGHT = 18.0
 VOLUME_LEGEND_HEIGHT = 36.0
 GRID_LEGEND_HEIGHT = 36.0
 DEVICE_BOX_LINEWIDTH = 1.0
@@ -306,43 +308,26 @@ def draw_volume_panel(
 
 def volume_panels_pdf(
     device_data: dict[str, dict[str, object]],
-) -> tuple[bytes, bytes]:
-    """Return the volume row and its shared legend as separate vector PDFs."""
-    fig, axes = plt.subplots(1, 2, figsize=(16.0, 5.6))
-    fig.subplots_adjust(
-        left=0.055,
-        right=0.985,
-        bottom=0.12,
-        top=0.78,
-        wspace=0.25,
-    )
-    for panel_label, device, ax in zip(
-        ("a(1)", "b(1)"),
-        ("H2-1", "H2-2"),
-        axes,
-    ):
+) -> tuple[dict[str, bytes], bytes]:
+    """Export each volume panel independently to avoid shared-row margins."""
+    panels = {}
+    for device in ("H2-1", "H2-2"):
+        fig, ax = plt.subplots(figsize=(8.0, 4.4))
+        fig.subplots_adjust(left=0.14, right=0.98, bottom=0.12, top=0.78)
         draw_volume_panel(ax, device_data[device], device=device)
-        ax.text(
-            -0.12,
-            1.17,
-            panel_label,
-            transform=ax.transAxes,
-            fontsize=13,
-            fontfamily="serif",
-            va="top",
-        )
+        handles, labels = ax.get_legend_handles_labels()
+        buffer = BytesIO()
+        fig.savefig(buffer, format="pdf")
+        panels[device] = buffer.getvalue()
+        plt.close(fig)
 
-    handles, labels = axes[0].get_legend_handles_labels()
     by_label = dict(zip(labels, handles))
     legend_content = shared_legend_pdf(
         [by_label[label] for label in LEGEND_LABELS],
         LEGEND_LABELS,
         handlelength=2.6,
     )
-    buffer = BytesIO()
-    fig.savefig(buffer, format="pdf")
-    plt.close(fig)
-    return buffer.getvalue(), legend_content
+    return panels, legend_content
 
 
 def shared_legend_pdf(
@@ -383,12 +368,37 @@ def place_pdf_bytes(
     page,
     target: pymupdf.Rect,
     content: bytes,
+    *,
+    trim_margins: bool = False,
 ) -> pymupdf.Rect:
     """Place an in-memory PDF page without rasterizing it."""
     with pymupdf.open(stream=content, filetype="pdf") as source:
-        fitted = fit_rect(source[0].rect, target)
-        page.show_pdf_page(fitted, source, 0)
+        source_rect = (
+            pdf_content_rect(source[0]) if trim_margins else source[0].rect
+        )
+        fitted = fit_rect(source_rect, target)
+        page.show_pdf_page(fitted, source, 0, clip=source_rect)
     return fitted
+
+
+def pdf_content_rect(page, padding: float = 4.0) -> pymupdf.Rect:
+    """Locate visible ink; clip the original vector PDF rather than its preview."""
+    pixmap = page.get_pixmap(colorspace=pymupdf.csRGB, alpha=False)
+    pixels = np.frombuffer(pixmap.samples, dtype=np.uint8).reshape(
+        pixmap.height, pixmap.width, pixmap.n
+    )
+    rows, columns = np.nonzero(np.any(pixels < 250, axis=2))
+    if not len(rows):
+        return page.rect
+    x_scale = page.rect.width / pixmap.width
+    y_scale = page.rect.height / pixmap.height
+    rect = pymupdf.Rect(
+        page.rect.x0 + columns.min() * x_scale - padding,
+        page.rect.y0 + rows.min() * y_scale - padding,
+        page.rect.x0 + (columns.max() + 1) * x_scale + padding,
+        page.rect.y0 + (rows.max() + 1) * y_scale + padding,
+    )
+    return rect & page.rect
 
 
 def grid_panel_pdf(
@@ -409,7 +419,7 @@ def grid_panel_pdf(
         grid_path=grid_path,
         xlim=(0.1, 1.0 if name == "flare_final" else 0.97),
         ylim=(20, 56),
-        zlim=(1.5, 3.45 if name == "flare_intermediate" else 3.5),
+        zlim=(1.5, 3.50),
         show_legend=False,
         axis_labelsize=GRID_AXIS_LABELSIZE,
         tick_labelsize=GRID_TICK_LABELSIZE,
@@ -489,14 +499,7 @@ def build_combined_figure(output_path: Path = OUTPUT_PATH) -> Path:
     )
     device_box_bottom = PAGE_HEIGHT - PAGE_MARGIN
 
-    top_target = pymupdf.Rect(
-        PAGE_MARGIN,
-        PAGE_MARGIN,
-        PAGE_WIDTH - PAGE_MARGIN,
-        TOP_PANEL_HEIGHT,
-    )
-    volume_content, volume_legend = volume_panels_pdf(device_data)
-    place_pdf_bytes(page, top_target, volume_content)
+    volume_panels, volume_legend = volume_panels_pdf(device_data)
 
     column_width = (
         PAGE_WIDTH - 2.0 * PAGE_MARGIN - COLUMN_GAP
@@ -513,6 +516,26 @@ def build_combined_figure(output_path: Path = OUTPUT_PATH) -> Path:
     shared_grid_handles = {}
     for column, device in enumerate(("H2-1", "H2-2")):
         column_x = PAGE_MARGIN + column * (column_width + COLUMN_GAP)
+        top_target = pymupdf.Rect(
+            column_x + TOP_PANEL_MARGIN,
+            PAGE_MARGIN,
+            column_x + column_width - TOP_PANEL_MARGIN,
+            TOP_PANEL_HEIGHT,
+        )
+        place_pdf_bytes(
+            page, top_target, volume_panels[device], trim_margins=True
+        )
+        # Place all row labels in page coordinates so their left edges align.
+        add_panel_label(
+            page,
+            pymupdf.Rect(
+                column_x,
+                top_target.y0 + PANEL_LABEL_HEIGHT,
+                column_x + column_width,
+                top_target.y1,
+            ),
+            f"{'ab'[column]}(1)",
+        )
         subpanel_width = (column_width - SUBPANEL_GAP) / 2.0
         pulse_root, flare_root, _ = plot1.VOLUME_ROOTS[device]
         inputs = plot1.selected_grid_inputs(
@@ -545,8 +568,14 @@ def build_combined_figure(output_path: Path = OUTPUT_PATH) -> Path:
                 name=name,
             )
             shared_grid_handles.update(legend_handles)
-            fitted = place_pdf_bytes(page, target, content)
-            add_panel_label(page, fitted, label)
+            content_target = pymupdf.Rect(
+                target.x0,
+                target.y0 + PANEL_LABEL_HEIGHT,
+                target.x1,
+                target.y1,
+            )
+            place_pdf_bytes(page, content_target, content, trim_margins=True)
+            add_panel_label(page, target, label)
 
     for column in range(2):
         x0 = PAGE_MARGIN + column * (column_width + COLUMN_GAP)
