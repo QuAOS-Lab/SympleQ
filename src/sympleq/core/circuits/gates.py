@@ -149,8 +149,7 @@ class Gate(ABC):
     #       will use the functions in the new file that will contain a polished version of the functions in, e.g.,
     #       find_symplectic.py
     @classmethod
-    def solve_from_target(cls, input_tableau: TableauLike, target_tableau: TableauLike,
-                          dimension: int = DEFAULT_QUDIT_DIMENSION) -> Gate:
+    def solve_from_target(cls, input_tableau: TableauLike, target_tableau: TableauLike, dimension: int) -> Gate:
         """
         Find a Clifford gate that maps the input Pauli tableau to the target tableau.
 
@@ -198,11 +197,10 @@ class Gate(ABC):
 
         n_qudits = input_tableau.shape[1] // 2
 
-        symplectic = map_paulisum_to_target_tableau(
+        symplectic = map_pauli_sum_to_target_tableau(
             input_tableau,
             target_tableau,
             p=int(dimension),
-            method="auto",
         )
         phase_vector = np.zeros(2 * n_qudits, dtype=int)
 

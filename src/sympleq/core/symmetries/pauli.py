@@ -1,7 +1,7 @@
 import numpy as np
-import itertools
-from sympleq.core.paulis import PauliSum
-from sympleq.core.circuits import Circuit, GATES
+from sympleq.core.paulis import PauliSum, PauliString
+from sympleq.core.circuits import Circuit, GATES, PauliGate
+from sympleq.core.symmetries.conditional_hamiltonian import ConditionalHamiltonian2
 
 
 def number_of_SUM_X(r_control: int, r_target: int, d: int) -> int:
@@ -266,8 +266,15 @@ def symplectic_reduction_qudit(P) -> tuple[Circuit, list]:
     if len(conditional_qubits) > 0:
         for cq in conditional_qubits:
             C.add_gate(GATES.H, cq)
-        P1 = GATES.H.act(P1, cq)
+            P1 = GATES.H.act(P1, (cq,))
     return C, sorted(pivots, key=lambda x: x[1])
+
+
+def symplectic_pauli_reduction(P) -> tuple[Circuit, list]:
+    """
+    Backward-compatible alias for the qudit symplectic reduction routine.
+    """
+    return symplectic_reduction_qudit(P)
 
 
 def symplectic_reduction_iter_qudit_(P, C, pivots, current_qudit) -> tuple[Circuit, list]:
@@ -305,7 +312,7 @@ def symplectic_reduction_iter_qudit_(P, C, pivots, current_qudit) -> tuple[Circu
     if any(P.x_exp[:, current_qudit]) or any(P.z_exp[:, current_qudit]):
         if not any(P.x_exp[:, current_qudit]):  # If it is z we need to add a Hadamard gate to make it an X
             C.add_gate(GATES.H, current_qudit)
-            P = GATES.H.act(P, current_qudit)
+            P = GATES.H.act(P, (current_qudit,))
 
         current_pauli = min(i for i in range(n_p) if P.x_exp[i, current_qudit])  # first Pauli that has an x-component
         pivots.append((current_pauli, current_qudit, 'X'))
@@ -318,16 +325,16 @@ def symplectic_reduction_iter_qudit_(P, C, pivots, current_qudit) -> tuple[Circu
         pivots.append((current_pauli, current_qudit, 'Z'))
 
         C.add_gate(GATES.H, current_qudit)
-        P = GATES.H.act(P, current_qudit)
+        P = GATES.H.act(P, (current_qudit,))
 
         P, C = cancel_pauli(P, current_qudit, current_pauli, C, n_q_max)
 
         C.add_gate(GATES.H, current_qudit)
-        P = GATES.H.act(P, current_qudit)
+        P = GATES.H.act(P, (current_qudit,))
     return C, pivots
 
 
-def pauli_reduce(hamiltonian: PauliSum) -> tuple[PauliSum, list[PauliSum], Circuit, list]:
+def pauli_reduce(hamiltonian: PauliSum) -> tuple[ConditionalHamiltonian2, Circuit]:
     """
     Applies the symplectic reduction algorithm to a PauliSum and returns the reduced hamiltonian and the
     conditioned hamiltonians.
@@ -339,10 +346,8 @@ def pauli_reduce(hamiltonian: PauliSum) -> tuple[PauliSum, list[PauliSum], Circu
 
     Returns
     -------
-    h_red : PauliSum
-        The PauliSum after applying the symplectic reduction algorithm.
-    conditioned_hamiltonians : list[PauliSum]
-        The list of PauliSum's that are the conditioned hamiltonians.
+    conditional_hamiltonian : ConditionalHamiltonian2
+        The conditional hamiltonian after applying the symplectic reduction algorithm.
     C : Circuit
         The Circuit that implements the symplectic reduction algorithm.
     all_phases : list
@@ -355,34 +360,16 @@ def pauli_reduce(hamiltonian: PauliSum) -> tuple[PauliSum, list[PauliSum], Circu
     h_red.remove_trivial_qudits()
 
     # build list of z symmetries as those qubits with only z
-    list_of_z_symmetries = []
-    list_of_phases = []
-    n_sectors = 1
     z_symmetric_qudits = set()
     for i in range(h_red.n_qudits()):
         if not any(h_red.x_exp[:, i]):  # z only
-            list_of_z_symmetries.append((i, np.where(h_red.z_exp[:, i] != 0)[0]))
             z_symmetric_qudits.add(i)
-            list_of_phases += np.arange(h_red.dimensions[i]).tolist()
-            n_sectors *= h_red.dimensions[i]
 
-    _ = len(list_of_z_symmetries)
-    all_phases = [list(bits) for bits in itertools.product(list_of_phases)]
-    # z symmetries can simply alter the phase of the Paulis
-    conditioned_hamiltonians = []
+    # build the conditional hamiltonian for the z symmetries
+    z_exp = np.array([1 if i in z_symmetric_qudits else 0 for i in range(h_red.n_qudits())])
+    Sym = PauliString.from_exponents(np.zeros(h_red.n_qudits()), z_exp, h_red.dimensions)
+    S = PauliGate(Sym)
+    T = Circuit.empty(h_red.dimensions).composite_gate()
+    conditional_hamiltonian = ConditionalHamiltonian2(h_red, S, T)
 
-    for sector in range(min(n_sectors, len(all_phases))):
-
-        conditioned_hamiltonian = h_red.copy()
-        phase_factor = np.zeros(h_red.n_paulis(), dtype=int)
-        for i, z_symmetry in enumerate(list_of_z_symmetries):
-
-            phase_factor[list_of_z_symmetries[i][1]] += all_phases[sector]
-        conditioned_hamiltonian.set_phases((conditioned_hamiltonian.phases +
-                                           phase_factor) % conditioned_hamiltonian.lcm)
-        # TODO: evaluate if it is correct to set _delete_qudits as internal methods
-
-        conditioned_hamiltonian._delete_qudits(list(z_symmetric_qudits))
-        conditioned_hamiltonian.combine_equivalent_paulis()
-        conditioned_hamiltonians.append(conditioned_hamiltonian)
-    return h_red, conditioned_hamiltonians, C, all_phases
+    return (conditional_hamiltonian, C)

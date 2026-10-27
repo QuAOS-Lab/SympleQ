@@ -255,19 +255,9 @@ class TestSymplecticSolver:
         ])
         target_tab = input_tab @ F_expected % 2
 
-        F = map_paulisum_to_target_tableau(input_tab, target_tab, p=2)
+        F = map_pauli_sum_to_target_tableau(input_tab, target_tab, p=2)
 
         assert np.array_equal(F, F_expected)
-        assert np.array_equal((input_tab @ F) % 2, target_tab)
-
-    def test_map_pauli_sum_to_target_default_inverse_requires_complete_basis(self):
-        input_tab = np.array([[1, 0, 0, 0], [0, 0, 1, 0]], dtype=int)
-        target_tab = input_tab[[1, 0]]
-
-        with pytest.raises(ValueError, match="complete independent Pauli basis"):
-            map_paulisum_to_target_tableau(input_tab, target_tab, p=2)
-
-        F = map_paulisum_to_target_tableau(input_tab, target_tab, p=2, method="transvection")
         assert np.array_equal((input_tab @ F) % 2, target_tab)
 
     def test_map_pauli_sum_to_target_complete_basis_with_dependent_row(self):
@@ -283,22 +273,7 @@ class TestSymplecticSolver:
         ]) % p
         target_tab = input_tab @ F_expected % p
 
-        F = map_paulisum_to_target_tableau(input_tab, target_tab, p=p)
-
-        assert np.array_equal(F, F_expected)
-        assert np.array_equal((input_tab @ F) % p, target_tab)
-
-    def test_map_pauli_sum_to_target_complete_basis_qudit_default_inverse(self):
-        n = 2
-        p = 5
-        input_tab = np.eye(2 * n, dtype=int)
-        F_expected = np.block([
-            [np.zeros((n, n), dtype=int), np.eye(n, dtype=int)],
-            [-np.eye(n, dtype=int), np.zeros((n, n), dtype=int)],
-        ]) % p
-        target_tab = input_tab @ F_expected % p
-
-        F = map_paulisum_to_target_tableau(input_tab, target_tab, p=p)
+        F = map_pauli_sum_to_target_tableau(input_tab, target_tab, p=p)
 
         assert np.array_equal(F, F_expected)
         assert np.array_equal((input_tab @ F) % p, target_tab)

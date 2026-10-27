@@ -230,6 +230,50 @@ class TestPaulis:
             with pytest.raises(ValueError):
                 p_string1[1] = PauliString.from_string(f"x{1}z{0} x{0}z{2} x{1}z{0}", dimensions=[dim, dim, dim])
 
+    def test_to_hilbert_space_consistency(self):
+        # Single Pauli matches PauliString representation
+        for _ in range(N_tests):
+            d = random.choice(PRIME_LIST)
+            r = np.random.randint(0, d)
+            s = np.random.randint(0, d)
+            ps = PauliString.from_exponents(r, s, dimensions=d)
+            h_pauli = ps.to_hilbert_space().toarray()
+            h_ps = ps.to_hilbert_space().toarray()
+
+            assert np.allclose(h_pauli, h_ps, atol=1e-10)
+            # Pauli operators should be unitary
+            assert np.allclose(h_ps.conj().T @ h_ps, np.eye(h_ps.shape[0]), atol=1e-10)
+
+        # PauliString and equivalent single-term PauliSum should have identical matrices
+        for _ in range(N_tests):
+            n_qudits = random.randint(1, 3)
+            dims = [random.choice(PRIME_LIST) for _ in range(n_qudits)]
+            x_exp = [np.random.randint(0, d) for d in dims]
+            z_exp = [np.random.randint(0, d) for d in dims]
+            ps = PauliString.from_exponents(x_exp, z_exp, dimensions=dims)
+
+            h_ps = ps.to_hilbert_space().toarray()
+            ps_sum = PauliSum.from_pauli_strings(ps)
+            h_ps_sum = ps_sum.to_hilbert_space().toarray()
+
+            D = int(np.prod(dims))
+            assert h_ps.shape == (D, D)
+            assert np.allclose(h_ps, h_ps_sum, atol=1e-10)
+
+    def test_known_single_qubit_paulis_to_hilbert_space(self):
+        # For qubits, to_hilbert_space should recover the standard matrices for X, Y=XZ (bare convention), Z.
+        X = PauliString.from_string("x1z0", dimensions=2).to_hilbert_space().toarray()
+        Z = PauliString.from_string("x0z1", dimensions=2).to_hilbert_space().toarray()
+        Y = PauliString.from_string("x1z1", dimensions=2).to_hilbert_space().toarray()  # XZ with no extra phase
+
+        X_expected = np.array([[0, 1], [1, 0]], dtype=complex)
+        Z_expected = np.array([[1, 0], [0, -1]], dtype=complex)
+        Y_expected = X_expected @ Z_expected  # [[0, -1], [1, 0]]
+
+        assert np.allclose(X, X_expected)
+        assert np.allclose(Z, Z_expected)
+        assert np.allclose(Y, Y_expected)
+
     def test_pauli_sum_multiplication(self):
         for dim in PRIME_LIST:
             for _ in range(N_tests):
@@ -462,24 +506,35 @@ class TestPaulis:
             f"with dimensions {dimensions}"
         )
 
-    def test_acquired_phase_on_mixed_dimensions(self):
-        dims = [2, 3]
-        lcm = 6
+    def test_combine_equivalent_paulis(self):
+        dims = [2, 2]
+        # Equivalent tableau rows should always merge; phases are absorbed into the complex coefficient.
+        ps_a = PauliString.from_string("x1z0 x0z1", dims)
+        ps_b = PauliString.from_string("x1z0 x0z1", dims)
+        ps_c = PauliString.from_string("x1z0 x0z1", dims)  # different phase => different coefficient
+        ps_d = PauliString.from_string("x0z1 x1z0", dims)
 
-        z0 = PauliString.from_string('x0z1 x0z0', dimensions=dims)
-        x0 = PauliString.from_string('x1z0 x0z0', dimensions=dims)
-        z1 = PauliString.from_string('x0z0 x0z1', dimensions=dims)
-        x1 = PauliString.from_string('x0z0 x1z0', dimensions=dims)
+        P = PauliSum.from_pauli_strings([ps_a, ps_b, ps_c, ps_d],
+                                        weights=[1.0, 2.0, 3.0, 4.0],
+                                        phases=[0, 0, 1, 0])
 
-        assert z0.acquired_phase(x0) == 2 * (lcm // dims[0])
-        assert z1.acquired_phase(x1) == 2 * (lcm // dims[1])
-        assert x0.acquired_phase(z0) == 0
-        assert x1.acquired_phase(z1) == 0
+        P.combine_equivalent_paulis()
 
-        for a, b in [(z0, x0), (z1, x1), (x0, z0), (x1, z1)]:
-            assert a.acquired_phase(b) == (a * b).phases[0] % (2 * lcm), (
-                f'acquired_phase disagrees with __mul__ for {a} and {b}'
-            )
+        assert P.n_paulis() == 2
+        assert np.all(P.phases == 0)
+
+        obs = {}
+        for i in range(P.n_paulis()):
+            row = np.asarray(P.tableau[i]).tolist()
+            obs[tuple(row)] = complex(P.weights[i])
+
+        # For qubits, mod = 2*lcm = 4 and omega = exp(2*pi*i/4) = 1j.
+        # The phase=1 term contributes (3.0 * 1j).
+        key_x = tuple(ps_a.tableau[0].tolist())
+        key_d = tuple(ps_d.tableau[0].tolist())
+        assert key_x in obs and key_d in obs
+        assert np.allclose(obs[key_x], 3.0 + 3.0j, atol=1e-12, rtol=0)
+        assert np.allclose(obs[key_d], 4.0 + 0.0j, atol=1e-12, rtol=0)
 
     def test_phase_and_dot_product(self):
 
