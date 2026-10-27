@@ -81,6 +81,39 @@ def solve_linear_system_over_gf(coefficient_matrix: IntNDArray, right_hand_side:
     if isinstance(field, int):
         field = galois.GF(field)
 
+        R = np.hstack((coefficient_matrix_gf2, right_hand_side_gf2))
+        row = 0
+        pivots: list[tuple[int, int]] = []
+        for col in range(n):
+            if row >= m:
+                break
+            # find pivot
+            nz = np.flatnonzero(R[row:, col])
+            if nz.size == 0:
+                continue
+            piv = row + nz[0]
+            if piv != row:
+                R[[row, piv]] = R[[piv, row]]
+            # eliminate other rows
+            mask = R[:, col].astype(bool)
+            mask[row] = False
+            R[mask] ^= R[row]
+            pivots.append((row, col))
+            row += 1
+
+        # inconsistency check
+        for r in range(m):
+            if not R[r, :n].any() and R[r, n]:
+                raise ValueError("Inconsistent linear system over GF(2).")
+
+        solution = np.zeros(n, dtype=np.uint8)
+        for r, c in pivots:
+            solution[c] = R[r, n]
+        return solution.astype(int)
+
+    if isinstance(field, int):
+        field = galois.GF(field)
+
     coefficient_matrix_gf = field(coefficient_matrix)
     right_hand_side_gf = field(right_hand_side).reshape(-1, 1)
 
@@ -780,6 +813,36 @@ def gf2_inv(matrix: IntNDArray) -> IntNDArray:
 
 def gf_rref(matrix: IntNDArray, dimension: int = 2) -> tuple[IntNDArray, IntNDArray, IntNDArray, int]:
     """
+    matrix = np.asarray(matrix, dtype=np.uint8).copy() & 1
+    if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:
+        raise np.linalg.LinAlgError("GF2 inverse requires square matrix")
+
+    n = matrix.shape[0]
+    aug = np.hstack((matrix, np.eye(n, dtype=np.uint8)))
+
+    row = 0
+    for col in range(n):
+        if row >= n:
+            break
+        nz = np.flatnonzero(aug[row:, col])
+        if nz.size == 0:
+            continue
+        piv = row + int(nz[0])
+        if piv != row:
+            aug[[row, piv]] = aug[[piv, row]]
+        mask = aug[:, col].astype(bool)
+        mask[row] = False
+        aug[mask] ^= aug[row]
+        row += 1
+
+    if not np.array_equal(aug[:, :n] & 1, np.eye(n, dtype=np.uint8)):
+        raise np.linalg.LinAlgError("matrix is singular over GF(2)")
+
+    return aug[:, n:] & 1
+
+
+def gf_rref(matrix: IntNDArray, dimension: int = 2) -> tuple[IntNDArray, IntNDArray, IntNDArray, int]:
+    """
     Compute the reduced row echelon form of a matrix over GF(dimension) for a prime dimension.
 
     Defaults to GF(2) for backwards compatibility.
@@ -982,3 +1045,80 @@ def _select_row_basis_indices(matrix: IntNDArray, dimension: int, max_rows: int)
         if len(basis) >= max_rows:
             break
     return np.array(basis, dtype=int)
+
+
+def _random_invertible_matrix(p: int, size: int, rng: np.random.Generator) -> np.ndarray:
+    """Generate a random invertible matrix over GF(p) with the given dimension."""
+    GFp = galois.GF(p)
+    while True:
+        mat = GFp(rng.integers(0, p, size=(size, size)))
+        if np.linalg.matrix_rank(mat) == size:
+            return np.asarray(mat, dtype=int) % p
+
+
+def _random_matrix(p: int, shape: tuple[int, int], rng: np.random.Generator) -> np.ndarray:
+    """Generate a random matrix over GF(p) with the given shape."""
+    return rng.integers(0, p, size=shape, dtype=int) % p
+
+
+def _is_permutation_matrix(P: np.ndarray) -> bool:
+    """Check whether a matrix is a permutation matrix."""
+    if P.ndim != 2 or P.shape[0] != P.shape[1]:
+        return False
+    return bool(np.all((P == 0) | (P == 1)) and np.all(P.sum(axis=0) == 1) and np.all(P.sum(axis=1) == 1))
+
+
+def _test_gf_inv() -> None:
+    rng = np.random.default_rng()
+    for p in (2, 3, 5, 7):
+        for n in (1, 2, 4):
+            A = _random_invertible_matrix(p, n, rng)
+            inv = gf_inv(A, p=p)
+            prod = (A @ inv) % p
+            assert np.array_equal(prod, np.eye(n, dtype=int) % p), f"Inverse failed for p={p}, n={n}"
+
+
+def _test_gf_rref() -> None:
+    rng = np.random.default_rng()
+    for p in (2, 3, 5):
+        m, n = 4, 6
+        for _ in range(5):
+            A = _random_matrix(p, (m, n), rng)
+            R, M, N, rank = gf_rref(A, p=p)
+            left = (M @ A) % p
+            recon = (left @ N) % p
+            assert np.array_equal(recon, R), f"Reconstruction failed for p={p}"
+            pivots = []
+            for row_idx in range(m):
+                row = R[row_idx]
+                nz = np.nonzero(row)[0]
+                if nz.size == 0:
+                    assert np.all(row % p == 0)
+                    continue
+                pivot_col = nz[0]
+                pivots.append(pivot_col)
+                assert row[pivot_col] % p == 1
+                assert np.all(row[:pivot_col] % p == 0)
+                assert np.all(row[pivot_col + 1:] % p == 0)
+            assert rank == len(pivots), f"Rank mismatch for p={p}"
+
+
+def _test_gflu() -> None:
+    rng = np.random.default_rng()
+    for p in (2, 5, 11):
+        for n in (2, 3, 5):
+            A = _random_matrix(p, (n, n), rng)
+            L, U, P = gf_lu(A, p=p)
+            assert _is_permutation_matrix(P), f"P is not a permutation matrix for p={p}"
+            PA = (P @ A) % p
+            LU = (L @ U) % p
+            assert np.array_equal(PA, LU), f"LU factorization failed for p={p}"
+            assert np.array_equal(np.diag(L) % p, np.ones(n, dtype=int)), f"Diagonal of L not unit for p={p}"
+            assert np.all((np.triu(L, k=1) % p) == 0), f"L not lower-triangular for p={p}"
+
+
+if __name__ == "__main__":
+    _test_gf_inv()
+    _test_gf_rref()
+    _test_gflu()
+    print("All finite field solver self-tests passed.")
