@@ -1,12 +1,9 @@
 from __future__ import annotations
-from typing import Sequence
 import numpy as np
 import galois
 
-from sympleq._typing import ComplexNDArray, IntArrayLike, IntNDArray
 
-
-def bases_to_int(base: IntArrayLike, dimensions: IntArrayLike) -> int:
+def bases_to_int(base, dimensions) -> int:
     """
     Converts a list of integers (base) given the dimensions to an integer. Base can be thought of as a number
     in basis of the dimensions which is converted to a number in base 10.
@@ -41,7 +38,7 @@ def bases_to_int(base: IntArrayLike, dimensions: IntArrayLike) -> int:
     return number
 
 
-def int_to_bases(number: int, dimensions: IntArrayLike) -> IntNDArray:
+def int_to_bases(number: int, dimensions: int | list[int] | np.ndarray) -> np.ndarray:
     """
     Converts an integer to a list of integers given the dimensions. The returned list of integers can be thought of
     as a number in basis of the dimensions which is converted from a number in base 10.
@@ -77,29 +74,22 @@ def int_to_bases(number: int, dimensions: IntArrayLike) -> IntNDArray:
     return np.flip(np.array(base, dtype=int))
 
 
-# TODO: This function is not used anywhere in the codebase. Remove it in a following PR.
-def get_linearly_independent_rows(matrix: IntNDArray, dimension: int) -> list[int]:
+def get_linearly_independent_rows(A: np.ndarray, d: int) -> list[int]:
     """
-    Returns the pivot column indices for the row-reduced form of `matrix` over a Galois field.
+    Returns the pivot column indices for the row-reduced form of matrix A over a Galois field.
 
-    Parameters
-    ----------
-    matrix : IntNDArray
-        Input matrix over GF(dimension).
-    dimension : int
-        The prime (or prime power) defining the Galois field GF(dimension).
+    Args:
+        A (galois.FieldArray): Input matrix over GF(p).
 
-    Returns
-    -------
-    list of int
-        List of pivot column indices.
+    Returns:
+        List[int]: List of pivot column indices.
     """
 
-    field = galois.GF(dimension)
-    matrix = field(matrix)
-    reduced_matrix = matrix.row_reduce()
+    GF = galois.GF(d)
+    A = GF(A)
+    R = A.row_reduce()
     pivots = []
-    for row in reduced_matrix:
+    for row in R:
         nz_indices = np.nonzero(row)[0]
         if nz_indices.size > 0:
             pivots.append(nz_indices[0])
@@ -109,66 +99,43 @@ def get_linearly_independent_rows(matrix: IntNDArray, dimension: int) -> list[in
 def complex_phase_value(phase: int, dimension: int) -> complex:
     """
     Roots of unity (varying `phase`) with respect to (twice a) chosen dimension `dimension`.
+    The "twice" is for taking into account the qubit case (`dimension = 2`), where X*Z = i Y. For details, see:
+    `IEEE International Symposium on Information Theory (ISIT), pp. 791-795. IEEE (2018)
+    <https://doi.org/10.1109/ISIT.2018.8437652>`_
 
-    The "twice" is for taking into account the qubit case (`dimension = 2`), where X*Z = i Y.
-    For details, see: `IEEE International Symposium on Information Theory (ISIT), pp. 791-795.
-    IEEE (2018) <https://doi.org/10.1109/ISIT.2018.8437652>`_
+    Args:
+        phase (int): The integer to compute the eigenvalue for.
+        dimension (int): The dimension of the pauli to use.
 
-    Parameters
-    ----------
-    phase : int
-        The integer to compute the eigenvalue for.
-    dimension : int
-        The dimension of the pauli to use.
-
-    Returns
-    -------
-    complex
-        The computed eigenvalue.
+    Returns:
+        complex: The computed eigenvalue.
     """
-    phase = phase % (2 * dimension)
+    phase = int(phase) % (2 * int(dimension))
+    dimension = int(dimension)
 
     # Avoid roundoff for the common quadrant roots 1, i, -1, -i.
     if (2 * phase) % dimension == 0:
         quadrant = ((2 * phase) // dimension) % 4
-        return 1j ** quadrant
-    else:
-        return np.exp(2 * np.pi * 1j * phase / (2 * dimension))
+        return (1.0 + 0.0j, 0.0 + 1.0j, -1.0 + 0.0j, 0.0 - 1.0j)[quadrant]
+
+    return np.exp(2 * np.pi * 1j * phase / (2 * dimension))
 
 
-def multi_kron(matrices: Sequence[ComplexNDArray]) -> ComplexNDArray:
+def multi_kron(matrices):
     """
     Compute the Kronecker product of multiple matrices.
 
-    Parameters
-    ----------
-    matrices : Sequence[ComplexNDArray]
-        A sequence of complex square matrices to compute the Kronecker product of.
+    Args:
+        matrices (List[np.ndarray]): A list of matrices to compute the Kronecker product of.
 
-    Returns
-    -------
-    ComplexNDArray
-        The Kronecker product of the input matrices.
-
-    Raises
-    ------
-    ValueError
-        If `matrices` is empty, or if any matrix is not a 2-dimensional square
-        array with a complex dtype.
+    Returns:
+        np.ndarray: The Kronecker product of the input matrices.
     """
-    if not matrices:
-        raise ValueError("At least one matrix must be provided.")
-
-    for m in matrices:
-        if not isinstance(m, np.ndarray) or m.ndim != 2 or m.shape[0] != m.shape[1]:
-            shape = getattr(m, "shape", None)
-            raise ValueError(f"Each matrix must be a square 2-dimensional array, got shape {shape}.")
-        if not np.issubdtype(m.dtype, np.complexfloating):
-            raise ValueError(f"Each matrix must have a complex dtype, got {m.dtype}.")
-
-    if len(matrices) == 1:
+    if len(matrices) <= 1:
         return matrices[0]
     M = np.kron(matrices[0], matrices[1])
+    if len(matrices) == 2:
+        return M
     for i in range(2, len(matrices)):
         M = np.kron(M, matrices[i])
     return M

@@ -1,5 +1,3 @@
-# TODO: move all functions that are required for the class method
-#       `input_to_target` to a unique file, that works with mixed dimension.
 from __future__ import annotations
 import numpy as np
 import galois

@@ -1,7 +1,7 @@
 from __future__ import annotations
 from abc import ABC
 import numpy as np
-from typing import Self, overload
+from typing import Self, TypeVar, cast
 
 from sympleq._typing import IntArrayLike
 from sympleq.core.paulis import PauliObject
@@ -9,15 +9,13 @@ from sympleq.core.paulis._typing import (
     TableauType, TableauLike, PhasesType, DimensionsType, HilbertOperator
 )
 from sympleq.core.circuits.utils import embed_symplectic, embed_unitary, transvection_matrix
-from sympleq.core.circuits.random_symplectic import (
-    symplectic_random_koenig_smolin_gf2,
-    symplectic_random_transvection,
-)
-from sympleq.core.circuits.find_symplectic import map_paulisum_to_target_tableau
+from sympleq.core.circuits.random_symplectic import symplectic_random_transvection
+from sympleq.core.circuits.find_symplectic import map_pauli_sum_to_target_tableau
 from sympleq.core.paulis.constants import DEFAULT_QUDIT_DIMENSION
 from sympleq.core.circuits.target import get_phase_vector
-from sympleq.core.paulis.pauli_string import PauliString
-from sympleq.core.paulis.pauli_sum import PauliSum
+
+
+PauliType = TypeVar("PauliType", bound=PauliObject)
 
 
 class Gate(ABC):
@@ -84,17 +82,9 @@ class Gate(ABC):
         self._inverse: Self | None = None
 
     @classmethod
-    def from_random(
-        cls,
-        n_qudits: int,
-        dimension: int,
-        num_transvections: int | None = None,
-        *,
-        sampler: str = "transvection",
-        rng: np.random.Generator | None = None,
-    ) -> Gate:
+    def from_random(cls, n_qudits: int, dimension: int, num_transvections: int | None = None) -> Gate:
         """
-        Generate a random Clifford gate.
+        Generate a random Clifford gate by composing random transvections.
 
         Parameters
         ----------
@@ -103,15 +93,7 @@ class Gate(ABC):
         dimension : int
             Local Hilbert space dimension (e.g., 2 for qubits).
         num_transvections : int | None
-            Number of transvections to compose for ``sampler="transvection"``.
-            If None, defaults to 4*n_qudits.
-        sampler : str
-            Random symplectic sampler to use. ``"transvection"`` preserves the
-            historical behavior. ``"koenig-smolin"`` uses the Koenig-Smolin
-            uniform index sampler and is available only for qubits
-            (``dimension == 2``).
-        rng : np.random.Generator | None
-            Optional random generator for the selected sampler.
+            Number of transvections to compose. If None, defaults to 4*n_qudits.
 
         Returns
         -------
@@ -119,38 +101,14 @@ class Gate(ABC):
             A random Clifford gate with the generated symplectic matrix.
         """
 
-        sampler_key = str(sampler).strip().lower().replace("_", "-")
-        if sampler_key == "transvection":
-            symplectic = symplectic_random_transvection(
-                n_qudits,
-                dimension,
-                num_transvections,
-                rng=rng,
-            )
-        elif sampler_key == "koenig-smolin":
-            if dimension != 2:
-                raise ValueError("sampler='koenig-smolin' is only implemented for dimension=2.")
-            if num_transvections is not None:
-                raise ValueError("num_transvections is not used with sampler='koenig-smolin'.")
-            symplectic = symplectic_random_koenig_smolin_gf2(n_qudits, rng=rng)
-        else:
-            raise ValueError(
-                "Unknown random Clifford sampler "
-                f"{sampler!r}. Expected 'transvection' or 'koenig-smolin'."
-            )
-
+        symplectic = symplectic_random_transvection(n_qudits, dimension, num_transvections)
         # For random gates, we use zero phase vector (phases depend on specific gate sequence)
         phase_vector = get_phase_vector(symplectic, dimension)
 
         return _GenericGate("random", symplectic, phase_vector)
 
-    # TODO: the following function should work for mixed qudits. the gate method should actually take two PauliSums
-    #       (inclusive of phases) and should return a gate that maps the first to the second. This is the mthod that
-    #       will use the functions in the new file that will contain a polished version of the functions in, e.g.,
-    #       find_symplectic.py
     @classmethod
-    def solve_from_target(cls, input_tableau: TableauLike, target_tableau: TableauLike,
-                          dimension: int = DEFAULT_QUDIT_DIMENSION) -> Gate:
+    def solve_from_target(cls, input_tableau: TableauLike, target_tableau: TableauLike, dimension: int) -> Gate:
         """
         Find a Clifford gate that maps the input Pauli tableau to the target tableau.
 
@@ -198,11 +156,10 @@ class Gate(ABC):
 
         n_qudits = input_tableau.shape[1] // 2
 
-        symplectic = map_paulisum_to_target_tableau(
+        symplectic = map_pauli_sum_to_target_tableau(
             input_tableau,
             target_tableau,
             p=int(dimension),
-            method="auto",
         )
         phase_vector = np.zeros(2 * n_qudits, dtype=int)
 
@@ -261,19 +218,7 @@ class Gate(ABC):
             np.all(self._phase_vector == other._phase_vector) and \
             np.all(self._exceptional_phase_vectors == other._exceptional_phase_vectors)
 
-    @overload
-    def act(self, pauli: PauliSum, qudits: int | tuple[int, ...]) -> PauliSum:
-        ...
-
-    @overload
-    def act(self, pauli: PauliString, qudits: int | tuple[int, ...]) -> PauliString:
-        ...
-
-    @overload
-    def act(self, pauli: PauliObject, qudits: int | tuple[int, ...]) -> PauliObject:
-        ...
-
-    def act(self, pauli, qudits):
+    def act(self, pauli: PauliType, qudits: int | tuple[int, ...]) -> PauliType:
         """
         Apply this gate to a Pauli object at the specified qudit indices.
 
@@ -327,10 +272,10 @@ class Gate(ABC):
 
         new_phases = (pauli.phases + acquired_phases) % (2 * pauli.lcm)
 
-        return pauli.__class__(
+        return cast(PauliType, pauli.__class__(
             tableau=new_tableau, dimensions=pauli.dimensions,
             weights=pauli.weights, phases=new_phases
-        )
+        ))
 
     def act_in_hilbert_space(self, rho: HilbertOperator,
                              qudits: tuple[int, ...], dimensions: DimensionsType) -> HilbertOperator:
@@ -453,8 +398,7 @@ class Gate(ABC):
 
         return _GenericGate(new_name, self._symplectic @ T, self._phase_vector.copy())
 
-    def full_symplectic(self, qudits: tuple[int, ...] | int, n_qudits: int,
-                        dimension: int | None = None) -> TableauType:
+    def full_symplectic(self, qudits: tuple[int, ...] | int, n_qudits: int, p: int | None = None) -> TableauType:
         """
         Get the full 2n x 2n symplectic matrix for a gate acting on specific qudits.
 
@@ -464,21 +408,21 @@ class Gate(ABC):
             The qudit index(es) the gate acts on
         n_qudits : int
             Total number of qudits in the system
-        dimension : int
+        p : int
             The prime dimension for modular arithmetic
 
         Returns
         -------
         TableauLike
-            The full 2n x 2n symplectic matrix mod dimension
+            The full 2n x 2n symplectic matrix mod p
         """
         if isinstance(qudits, int):
             qudits = (qudits,)
-        symplectic_matrix, _ = embed_symplectic(self.symplectic, self.phase_vector(dimension), qudits, n_qudits)
-        if dimension is None:
-            return symplectic_matrix
+        F, _ = embed_symplectic(self.symplectic, self.phase_vector(p), qudits, n_qudits)
+        if p is None:
+            return F
 
-        return symplectic_matrix % dimension
+        return F % p
 
 
 class _GenericGate(Gate):
@@ -585,19 +529,7 @@ class _CX(Gate):
         super().__init__(name, symplectic)
 
     def local_unitary(self, dimension: int | None = None) -> HilbertOperator:
-        """
-        CX acts as |j,k⟩ -> |j, (j+k) mod d⟩ (or |j, (k-j) mod d⟩ for inverse).
-
-        Parameters
-        ----------
-        dimension : int, optional
-            The local Hilbert space dimension. Defaults to `DEFAULT_QUDIT_DIMENSION`.
-
-        Returns
-        -------
-        HilbertOperator
-            The d^2 x d^2 unitary matrix for the CX gate.
-        """
+        """CX acts as |j,k⟩ -> |j, (j+k) mod d⟩ (or |j, (k-j) mod d⟩ for inverse)."""
 
         if dimension is None:
             dimension = DEFAULT_QUDIT_DIMENSION
@@ -630,19 +562,7 @@ class _SWAP(Gate):
         super().__init__("SWAP", symplectic)
 
     def local_unitary(self, dimension: int | None = None) -> HilbertOperator:
-        """
-        SWAP acts as |j,k⟩ -> |k,j⟩.
-
-        Parameters
-        ----------
-        dimension : int, optional
-            The local Hilbert space dimension. Defaults to `DEFAULT_QUDIT_DIMENSION`.
-
-        Returns
-        -------
-        HilbertOperator
-            The d^2 x d^2 unitary matrix for the SWAP gate.
-        """
+        """SWAP acts as |j,k⟩ -> |k,j⟩."""
         if dimension is None:
             dimension = DEFAULT_QUDIT_DIMENSION
         d = dimension
@@ -674,19 +594,7 @@ class _CZ(Gate):
         super().__init__("CZ", symplectic)
 
     def local_unitary(self, dimension: int | None = None) -> HilbertOperator:
-        """
-        CZ adds phase ω^{jk} to |j,k⟩ where ω = exp(2πi/d).
-
-        Parameters
-        ----------
-        dimension : int, optional
-            The local Hilbert space dimension. Defaults to `DEFAULT_QUDIT_DIMENSION`.
-
-        Returns
-        -------
-        HilbertOperator
-            The d^2 x d^2 unitary matrix for the CZ gate.
-        """
+        """CZ adds phase ω^{jk} to |j,k⟩ where ω = exp(2πi/d)."""
         if dimension is None:
             dimension = DEFAULT_QUDIT_DIMENSION
         d = dimension
@@ -704,7 +612,7 @@ class _CZ(Gate):
         return self
 
 
-class _ZZMax(Gate):
+class _ZZPhase(Gate):
     """ZZ-Phase gate (native for Quantinuum:
     https://docs.quantinuum.com/systems/trainings/helios/getting_started/parameterized_angle_2_qubit_gates.html).
     The angle is set to pi/4 thus the gate is Clifford."""
@@ -734,21 +642,8 @@ class _ZZMax(Gate):
         super().__init__(name, symplectic, exceptional_phase_vectors=exceptional)
 
     def local_unitary(self, dimension: int | None = None) -> HilbertOperator:
-        """
-        Applies phase exp(±iπ(j+k)²/d) to |j,k⟩ (sign flipped for the inverse).
-
-        For qubits this reproduces ZZPhase(±π/4) = exp(∓iπ/4 Z⊗Z) up to a global phase.
-
-        Parameters
-        ----------
-        dimension : int, optional
-            The local Hilbert space dimension. Defaults to `DEFAULT_QUDIT_DIMENSION`.
-
-        Returns
-        -------
-        HilbertOperator
-            The d^2 x d^2 unitary matrix for the ZZMax gate.
-        """
+        """Applies phase exp(±iπ(j+k)²/d) to |j,k⟩ (sign flipped for the inverse).
+        For qubits this reproduces ZZPhase(±π/4) = exp(∓iπ/4 Z⊗Z) up to a global phase."""
         if dimension is None:
             dimension = DEFAULT_QUDIT_DIMENSION
         d = dimension
@@ -759,53 +654,6 @@ class _ZZMax(Gate):
             for k in range(d):
                 idx = j * d + k
                 U[idx, idx] = np.exp(sign * 1j * np.pi * (j + k) ** 2 / d)
-        return HilbertOperator(U)
-
-
-class _V(Gate):
-    """V = √X gate: X -> X, Z -> -Y = -XZ. Has special phase vector for qubits.
-
-    V is the X-axis analog of S: V = exp(-iπ/4 X). Together with S and any
-    entangling Clifford, V generates the Clifford group, which
-    makes ``{S, V, ZZMax}`` a useful generating set on Quantinuum H2 since
-    each element maps 1:1 to a single H2 native gate (Rz(0.5), PhasedX(0.5, 0),
-    ZZMax respectively).
-    """
-
-    def __init__(self, is_inverse: bool = False):
-        self._is_inverse = is_inverse
-
-        # Symplectic image is the same for V and V^{-1}; the phase vector differs.
-        # X -> X (image (1, 0))
-        # Z -> XZ (image (1, 1)); the sign of the XZ image is what distinguishes V from V^{-1}.
-        symplectic = np.array([
-            [1, 0],   # image of X:  X -> X
-            [1, 1],   # image of Z:  Z -> XZ
-        ], dtype=int).T
-
-        if is_inverse:
-            # V^{-1} Z V = +σ_y = +i · sympleq_Y, so phase[1] = +1 (=ω).
-            exceptional = {2: np.array([0, 1], dtype=int)}
-            name = "V_inv"
-        else:
-            # V Z V^{-1} = -σ_y = -i · sympleq_Y, so phase[1] = -1 (=ω^{-1}).
-            exceptional = {2: np.array([0, -1], dtype=int)}
-            name = "V"
-
-        super().__init__(name, symplectic, exceptional_phase_vectors=exceptional)
-
-    def local_unitary(self, dimension: int | None = None) -> HilbertOperator:
-        if dimension is None:
-            dimension = DEFAULT_QUDIT_DIMENSION
-        if dimension != 2:
-            # FIXME: An easy way to define it for qudit is to apply a Hadamard to the S gate:
-            # H@S@H_inv
-            raise NotImplementedError(
-                "V (= √X) is only implemented for qubits (dimension=2)."
-            )
-        # √X = exp(-iπ/4 X) = (1/√2)(I - iX) = (1/√2)[[1, -i], [-i, 1]]
-        sign = 1j if self._is_inverse else -1j
-        U = np.array([[1, sign], [sign, 1]], dtype=complex) / np.sqrt(2)
         return HilbertOperator(U)
 
 
@@ -977,15 +825,10 @@ class _Gates:
         self._CX._inverse = self._CX_inv
         self._CX_inv._inverse = self._CX
 
-        self._ZZMax = _ZZMax(is_inverse=False)
-        self._ZZMax_inv = _ZZMax(is_inverse=True)
-        self._ZZMax._inverse = self._ZZMax_inv
-        self._ZZMax_inv._inverse = self._ZZMax
-
-        self._V = _V(is_inverse=False)
-        self._V_inv = _V(is_inverse=True)
-        self._V._inverse = self._V_inv
-        self._V_inv._inverse = self._V
+        self._ZZPhase = _ZZPhase(is_inverse=False)
+        self._ZZPhase_inv = _ZZPhase(is_inverse=True)
+        self._ZZPhase._inverse = self._ZZPhase_inv
+        self._ZZPhase_inv._inverse = self._ZZPhase
 
         self._SWAP = _SWAP()
         # SWAP is self-inverse, already handled in the class
@@ -1040,21 +883,12 @@ class _Gates:
 
     # Quantinuum-ZZ-Phase with angle pi/4
     @property
-    def ZZMax(self) -> _ZZMax:
-        return self._ZZMax
+    def ZZPhase(self) -> _ZZPhase:
+        return self._ZZPhase
 
     @property
-    def ZZMax_inv(self) -> _ZZMax:
-        return self._ZZMax_inv
-
-    # V = √X (Quantinuum H2 native: PhasedX(0.5, 0))
-    @property
-    def V(self) -> _V:
-        return self._V
-
-    @property
-    def V_inv(self) -> _V:
-        return self._V_inv
+    def ZZPhase_inv(self) -> _ZZPhase:
+        return self._ZZPhase_inv
 
     # SWAP
     @property
@@ -1102,21 +936,6 @@ class _Gates:
 # Global singleton instance
 GATES = _Gates()
 
-# All built-in gates (forward and inverse variants).
-DEFAULT_GATES_SET: list[Gate] = [
-    GATES.Id,
-    GATES.H, GATES.H_inv,
-    GATES.S, GATES.S_inv,
-    GATES.V, GATES.V_inv,
-    GATES.X, GATES.X_inv,
-    GATES.Y, GATES.Y_inv,
-    GATES.Z, GATES.Z_inv,
-    GATES.CX, GATES.CX_inv,
-    GATES.SWAP,
-    GATES.CZ,
-    GATES.ZZMax, GATES.ZZMax_inv,
-]
-
 
 class PauliGate(Gate):
     """
@@ -1159,16 +978,6 @@ class PauliGate(Gate):
         Compute the unitary for this PauliGate.
 
         For PauliGate, dimension is optional since it's determined by the stored PauliString.
-
-        Parameters
-        ----------
-        dimension : int, optional
-            Unused; retained for interface compatibility with `Gate.local_unitary`.
-
-        Returns
-        -------
-        HilbertOperator
-            The unitary matrix for this PauliGate.
         """
         from sympleq.core.circuits.utils import pauli_unitary_from_tableau
         # Use the dimension from the PauliString
@@ -1177,37 +986,12 @@ class PauliGate(Gate):
         z = self.pauli_string.z_exp
         return pauli_unitary_from_tableau(d, x, z, convention="bare")
 
-    @overload
-    def act(self, pauli: PauliSum, qudits: int | tuple[int, ...]) -> PauliSum:
-        ...
-
-    @overload
-    def act(self, pauli: PauliString, qudits: int | tuple[int, ...]) -> PauliString:
-        ...
-
-    @overload
-    def act(self, pauli: PauliObject, qudits: int | tuple[int, ...]) -> PauliObject:
-        ...
-
-    def act(self, pauli, qudits):
+    def act(self, pauli: PauliType, qudits: int | tuple[int, ...] | None = None) -> PauliType:
         """
         Apply this PauliGate to a Pauli object.
 
         For PauliGate, qudits defaults to all qudits in order (0, 1, 2, ..., n-1)
         since the gate was constructed for a specific number of qudits.
-
-        Parameters
-        ----------
-        pauli : Pauli | PauliString | PauliSum
-            The Pauli object to transform.
-        qudits : int | tuple[int, ...] | None
-            The qudit index(es) the gate acts on. If None, defaults to all
-            qudits in order.
-
-        Returns
-        -------
-        PauliObject
-            The transformed Pauli object of the same type as the input.
         """
         if qudits is None:
             qudits = tuple(range(self._n_qudits))
