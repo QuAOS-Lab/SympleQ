@@ -135,8 +135,12 @@ def plot_fle_isosurface_3d_matplotlib(
     ylim: tuple[float, float] = (20, 60),
     zlim: tuple[float, float] = (GATE_AXIS_MIN_LOG10, GATE_AXIS_MAX_LOG10),
     legend_labels: dict[str, str | None] | None = None,
+    show_legend: bool = True,
+    axis_labelsize: float | None = None,
+    tick_labelsize: float | None = None,
+    save: bool = True,
     show: bool = True,
-) -> None:
+) -> plt.Figure:
     input_path = Path(json_path)
 
     if input_path.suffix.lower() == ".npz":
@@ -317,6 +321,7 @@ def plot_fle_isosurface_3d_matplotlib(
                 s=36,
                 linewidths=1.4,
                 depthshade=False,
+                zorder=5,
                 label="Failure",
             )
         if SHOW_SUCCESS_POINTS and np.any(outcomes):
@@ -330,15 +335,22 @@ def plot_fle_isosurface_3d_matplotlib(
                 s=34,
                 linewidths=1.5,
                 depthshade=False,
+                zorder=5,
                 label="Success",
             )
 
     ax.set_xlim(*xlim)
     ax.set_ylim(*ylim)
     ax.set_zlim(*zlim)
-    ax.set_xlabel("Two-qubit gate ratio")
-    ax.set_ylabel("Qubits", labelpad=10)
-    ax.set_zlabel("log10(total gates)")
+    ax.set_xlabel(r"$R_{\rm 2q}$", fontsize=axis_labelsize)
+    ax.set_ylabel(r"$n_{\rm q}$", labelpad=10, fontsize=axis_labelsize)
+    ax.set_zlabel("")
+    if axis_labelsize is not None:
+        ax.xaxis.labelpad = 18
+        ax.yaxis.labelpad = 18
+    if tick_labelsize is not None:
+        ax.tick_params(axis="both", labelsize=tick_labelsize)
+        ax.tick_params(axis="z", labelsize=tick_labelsize)
     # title_prefix = "3D PULSE level set" if native_costaware else "3D FLARE level set"
     # ax.set_title(f"{title_prefix} | P(success)={target:g}")
     ax.view_init(elev=24, azim=-60)
@@ -350,11 +362,24 @@ def plot_fle_isosurface_3d_matplotlib(
         ]
         handles = [handle for handle, label in entries if label is not None]
         labels = [label for _, label in entries if label is not None]
-    ax.legend(handles, labels, loc="best", fontsize=8)
-    fig.tight_layout(rect=(0.0, 0.0, 0.94, 1.0))
-
-    png_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(png_path, dpi=DPI, bbox_inches="tight")
+    if show_legend:
+        ax.legend(handles, labels, loc="best", fontsize=8)
+    fig.tight_layout(rect=(0.0, 0.0, 0.92, 1.0))
+    fig.text(
+        0.89 if axis_labelsize is None else 0.91,
+        0.5,
+        r"$\log_{10}(n_{\rm g})$",
+        rotation=90,
+        va="center",
+        ha="center",
+        fontsize=(
+            plt.rcParams["axes.labelsize"]
+            if axis_labelsize is None else axis_labelsize
+        ),
+    )
+    if save:
+        png_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(png_path, dpi=DPI, bbox_inches="tight")
     print(f"[grid] loaded: {grid_path}")
     print(f"[grid] probabilities shape: {probabilities.shape}")
     print(
@@ -363,9 +388,11 @@ def plot_fle_isosurface_3d_matplotlib(
         f"{float(np.nanmax(probabilities)):.6g}"
     )
     print(f"[grid] target: {target}")
-    print(f"[saved] Matplotlib 3D isosurface: {png_path}")
+    if save:
+        print(f"[saved] Matplotlib 3D isosurface: {png_path}")
     if show:
         plt.show()
+    return fig
 
 
 if __name__ == "__main__":
