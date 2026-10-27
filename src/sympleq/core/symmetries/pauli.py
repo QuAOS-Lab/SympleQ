@@ -334,7 +334,7 @@ def symplectic_reduction_iter_qudit_(P, C, pivots, current_qudit) -> tuple[Circu
     return C, pivots
 
 
-def pauli_reduce(hamiltonian: PauliSum) -> tuple[ConditionalHamiltonian2, Circuit]:
+def pauli_reduce(hamiltonian: PauliSum) -> tuple[ConditionalHamiltonian2, Circuit, list]:
     """
     Applies the symplectic reduction algorithm to a PauliSum and returns the reduced hamiltonian and the
     conditioned hamiltonians.
@@ -350,8 +350,8 @@ def pauli_reduce(hamiltonian: PauliSum) -> tuple[ConditionalHamiltonian2, Circui
         The conditional hamiltonian after applying the symplectic reduction algorithm.
     C : Circuit
         The Circuit that implements the symplectic reduction algorithm.
-    all_phases : list
-        The list of all possible phases of the conditioned hamiltonians.
+    symmetries : list
+        The list of all pauli symmetries of the hamiltonian.
     """
     C, _ = symplectic_reduction_qudit(hamiltonian)
 
@@ -365,6 +365,14 @@ def pauli_reduce(hamiltonian: PauliSum) -> tuple[ConditionalHamiltonian2, Circui
         if not any(h_red.x_exp[:, i]):  # z only
             z_symmetric_qudits.add(i)
 
+    symmetries = []
+    for z in z_symmetric_qudits:
+        tableau  = np.zeros((1, 2*hamiltonian.n_qudits()), dtype=int)
+        tableau[0, hamiltonian.n_qudits() + z] = 1
+        P_sym = PauliSum(tableau, dimensions=[2]*hamiltonian.n_qudits(), weights=[1])
+        sym_string = C.inverse().act(P_sym)
+        symmetries.append(sym_string)
+
     # build the conditional hamiltonian for the z symmetries
     z_exp = np.array([1 if i in z_symmetric_qudits else 0 for i in range(h_red.n_qudits())])
     Sym = PauliString.from_exponents(np.zeros(h_red.n_qudits()), z_exp, h_red.dimensions)
@@ -372,4 +380,4 @@ def pauli_reduce(hamiltonian: PauliSum) -> tuple[ConditionalHamiltonian2, Circui
     T = Circuit.empty(h_red.dimensions).composite_gate()
     conditional_hamiltonian = ConditionalHamiltonian2(h_red, S, T)
 
-    return (conditional_hamiltonian, C)
+    return (conditional_hamiltonian, C, symmetries)
