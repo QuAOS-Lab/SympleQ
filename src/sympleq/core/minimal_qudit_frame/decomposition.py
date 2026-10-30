@@ -65,25 +65,32 @@ def minimal_qudit_frame(
     Callers that want a hard failure on anything less than a certified minimal
     decomposition should use :func:`minimal_qudit_frame_or_raise`.
     """
+    # checks whether the input symplectic is made in either row or column convention
     if convention not in ("column", "row"):
         raise ValueError(f"Unknown convention={convention!r}. Expected 'column' or 'row'.")
 
+    # checks whether the input symplectic is made in either row or column convention
     F = np.asarray(F, dtype=int)
     if F.ndim != 2 or F.shape[0] != F.shape[1]:
         raise ValueError(f"F must be a 2D square matrix, got shape {getattr(F, 'shape', None)}.")
     if F.shape[0] % 2 != 0:
         raise ValueError(f"F must be (2n)x(2n), got shape {F.shape}.")
+
+    # performs modular reduction to ensure that the input is in the correct range
     F = mod_p(F, p)
 
+    # if the input is in row convention, we transpose it to column convention and convert the result back to row convention at the end
     if convention == "row":
         Sigma_col, B_col, info = minimal_qudit_frame(
             F.T, p, convention="column", allow_degraded=allow_degraded
         )
         return convert_column_result_to_row(Sigma_col, B_col, info, p)
 
+    # checks whether the input symplectic is symplectic
     if not is_symplectic(F, p):
         raise ValueError("Input F is not symplectic in column-action convention.")
 
+    # Build primary components using coprime-polynomial projectors (whatever that means)
     meta = rcf_prepass(F, p)
     sector_contexts = sector_contexts_from_meta(meta)
 

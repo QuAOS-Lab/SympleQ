@@ -226,9 +226,13 @@ def primary_components_crt(F: np.ndarray, p: int) -> Dict:
     """
     Build primary components using coprime-polynomial projectors.
     """
+    # check that all entries in F are in the right range
     F = mod_p(F, p)
+    # get the number of rows and columns in F (2n x 2n)
     n2 = F.shape[0]
 
+    # Find the minimal polynomial of F over GF(p)
+    # the polynomial is returned as a list of coefficients over GF(p), starting from the constant term at index 0
     mF = minimal_polynomial(F, p)
     raw = factor_poly_over_fp(mF, p)
     factors = _normalize_factorization_output(raw, p)

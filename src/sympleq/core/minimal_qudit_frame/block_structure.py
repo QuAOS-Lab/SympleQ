@@ -13,6 +13,9 @@ def block_decompose(F: np.ndarray, p: int, **kwargs):
     Returns ``(Sigma, B, info)``.  The returned ``info`` dictionary distinguishes
     the attained qudit cost (``Q_att``/``qudit_cost``) from the optimal cost
     (``Q_opt``), which is only populated when minimality is certified.
+    Sigma = the block-diagonal symplectic matrix, 
+    B = the basis change matrix, 
+    info = dictionary with additional information.
     """
     return minimal_qudit_frame(F, p, **kwargs)
 

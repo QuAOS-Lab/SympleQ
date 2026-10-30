@@ -5,6 +5,9 @@ from sympleq.core.symmetries.modular_helpers import mod_p
 
 
 def poly_coerce_1d(a) -> np.ndarray:
+    # Make array a into a 1D numpy array of dtype int64. Raise TypeError if not possible.
+    # Array is supposed to represents a polynomial with coefficients in GF(p), low->high order.
+    # Meaning, the coefficient of x^0 is a[0], the coefficient of x^1 is a[1], etc.
     arr = np.asarray(a)
     if arr.ndim == 2 and 1 in arr.shape:
         arr = arr.reshape(-1)
@@ -14,6 +17,7 @@ def poly_coerce_1d(a) -> np.ndarray:
 
 
 def poly_trim(a) -> np.ndarray:
+    # reduce polynomial array till the first non-zero coefficient from the highest degree term
     a = poly_coerce_1d(a)
     i = len(a) - 1
     while i > 0 and int(a[i]) == 0:
@@ -22,14 +26,23 @@ def poly_trim(a) -> np.ndarray:
 
 
 def poly_is_zero(a) -> bool:
+    # check if polynomial array is zero
     a = poly_trim(a)
     return len(a) == 1 and int(a[0]) == 0
 
 
 def poly_monic(a, p: int) -> np.ndarray:
+    '''
+    Array a represents a polynomial with coefficients in GF(p). The entries of a being the coefficients of the polynomial, low->high order. 
+    The function first reduces the polynomial array to remove any leading zeros, then makes sure that all coefficients are in GF(p).
+    If the polynomial is zero, it returns the zero polynomial. Otherwise, it makes the polynomial monic by multiplying it by the inverse of its leading coefficient in GF(p).   
+    '''
+    # take the polynomial array, trim it and make sure that all coefficients are in GF(p)
     a = mod_p(poly_trim(a), p)
+    # if the polynomial is zero, return the zero polynomial
     if poly_is_zero(a):
         return np.array([0], dtype=np.int64)
+    # make the polynomial monic by multiplying it by the inverse of its leading coefficient in GF(p)
     inv = pow(int(a[-1]) % p, -1, p)
     return mod_p(a * inv, p)
 
