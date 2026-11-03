@@ -44,14 +44,17 @@ def mixed_sympleq_backend_factory(settings, rng,
                                   alpha_1q_depol=0.5599,
                                   alpha_1q_dephase=5.7209,
                                   alpha_2q_depol=0.8694,
-                                  alpha_2q_dephase=1.5278
+                                  alpha_2q_dephase=1.5278,
+                                  alpha_1q_dephase_nq=1.0,
+                                  alpha_2q_dephase_nq=1.0,
+                                  nq=26
                                   ):
 
     noise_model = GenericNoise.from_paulis(
         [
             alpha_1q_depol * ONE_Q_NOISE / 3,
             alpha_1q_depol * ONE_Q_NOISE / 3,
-            alpha_1q_dephase * ONE_Q_NOISE + alpha_1q_depol *ONE_Q_NOISE / 3,
+            alpha_1q_dephase * ONE_Q_NOISE + alpha_1q_depol *ONE_Q_NOISE / 3 + alpha_1q_dephase_nq * ONE_Q_NOISE*nq,
         ],
         rng
     )
@@ -60,7 +63,7 @@ def mixed_sympleq_backend_factory(settings, rng,
         [
             alpha_2q_depol * TWO_Q_NOISE / 3,
             alpha_2q_depol * TWO_Q_NOISE / 3,
-            alpha_2q_dephase * TWO_Q_NOISE + alpha_2q_depol * TWO_Q_NOISE / 3,
+            alpha_2q_dephase * TWO_Q_NOISE + alpha_2q_depol * TWO_Q_NOISE / 3 + alpha_2q_dephase_nq * TWO_Q_NOISE*nq,
         ],
         rng
     )

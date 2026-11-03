@@ -131,13 +131,24 @@ SHOW_POINTS_H22E = False
 
 def load_points(json_path: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, int]:
     payload = json.loads(json_path.read_text(encoding="utf-8"))
+    if isinstance(payload, list):
+        records = [
+            {
+                "n_1qb_gates": record["n_1q"],
+                "n_2qb_gates": record["n_2q"],
+                "results": [[record["success"], 1]],
+            }
+            for record in payload
+        ]
+    else:
+        records = payload.get("data", [])
     failure_ratios: list[float] = []
     failure_gates: list[float] = []
     success_ratios: list[float] = []
     success_gates: list[float] = []
     observations = 0
 
-    for record in payload.get("data", []):
+    for record in records:
         n_1q = int(record["n_1qb_gates"])
         n_2q = int(record["n_2qb_gates"])
         total = n_1q + n_2q
