@@ -40,7 +40,7 @@ from sympleq.integrations.quantinuum.utils import NATIVE_GATES_SET
 
 
 ROOT = Path("Personal/Data/optuna_opt")
-RES_ROOT = Path("Personal/Data/optuna_opt_run2")
+RES_ROOT = Path("Personal/Data/optuna_opt_liner_dep")
 SUMMARY_CSV = RES_ROOT / "optuna_trials.csv"
 N_TRIALS = 2000
 GRID_GATES_BOUNDS = (100, 3000)
@@ -206,17 +206,18 @@ def objective(trial, prepared, references):
         "alpha_2q_depol": trial.suggest_float("two_q_depol", 0.1, 5),
         "alpha_1q_dephase": trial.suggest_float("one_q_dephase", 0.1, 5),
         "alpha_2q_dephase": trial.suggest_float("two_q_dephase", 0.1, 5),
-        "alpha_1q_dephase_nq": trial.suggest_float("two_q_dephase", 0.01, 5),
-        "alpha_2q_dephase_nq": trial.suggest_float("two_q_dephase", 0.01, 5),
+        "alpha_1q_dephase_nq": trial.suggest_float("one_q_dephase_nq", 0.01, 5),
+        "alpha_2q_dephase_nq": trial.suggest_float("two_q_dephase_nq", 0.01, 5),
     }
-    backend = mixed_sympleq_backend_factory(
-        settings=None,
-        rng=default_rng(42),
-        **params,
-    )
     run_dir = RES_ROOT / f"trial_{trial.number:04d}"
     losses = {}
     for name in DATASETS:
+        backend = mixed_sympleq_backend_factory(
+            settings=None,
+            rng=default_rng(42),
+            nq=prepared[name][0][0].n_qubits,
+            **params,
+        )
         contour, contour_path = run_dataset(name, prepared[name], backend, run_dir)
         losses[name] = (
             NO_CONTOUR_LOSS
@@ -239,6 +240,8 @@ def save_trial(study, trial):
             trial.params["two_q_depol"],
             trial.params["one_q_dephase"],
             trial.params["two_q_dephase"],
+            trial.params["one_q_dephase_nq"],
+            trial.params["two_q_dephase_nq"],
             *(trial.user_attrs[f"{name}_loss"] for name in DATASETS),
             trial.value,
             *(trial.user_attrs[f"{name}_contour"] for name in DATASETS),
@@ -260,6 +263,7 @@ if __name__ == "__main__":
         csv.writer(handle).writerow([
             "trial", "one_q_depol", "two_q_depol",
             "one_q_dephase", "two_q_dephase",
+            "one_q_dephase_nq", "two_q_dephase_nq",
             *(f"{name}_loss" for name in DATASETS),
             "loss",
             *(f"{name}_contour" for name in DATASETS),
