@@ -115,9 +115,9 @@ def chamfer_loss(ref, target):
         (ref[:, None, :] - target[None, :, :]) ** 2,
         axis=2,
     )
-    ref_to_target = distances_squared.min(axis=1).sum()
-    target_to_ref = distances_squared.min(axis=0).sum()
-    return ref_to_target + target_to_ref
+    ref_to_target = distances_squared.min(axis=1).sum() / len(ref)
+    target_to_ref = distances_squared.min(axis=0).sum() / len(target)
+    return 100.0 * (ref_to_target + target_to_ref)
 
 
 def save_contour(grid_path, csv_path):
@@ -206,8 +206,8 @@ def objective(trial, prepared, references):
         "alpha_2q_depol": trial.suggest_float("two_q_depol", 0.1, 5),
         "alpha_1q_dephase": trial.suggest_float("one_q_dephase", 0.1, 5),
         "alpha_2q_dephase": trial.suggest_float("two_q_dephase", 0.1, 5),
-        "alpha_1q_dephase_nq": trial.suggest_float("one_q_dephase_nq", 0.01, 5),
-        "alpha_2q_dephase_nq": trial.suggest_float("two_q_dephase_nq", 0.01, 5),
+        "alpha_1q_dephase_nq": trial.suggest_float("one_q_dephase_nq", 0.001, 0.1),
+        "alpha_2q_dephase_nq": trial.suggest_float("two_q_dephase_nq", 0.001, 0.1),
     }
     run_dir = RES_ROOT / f"trial_{trial.number:04d}"
     losses = {}
