@@ -1,6 +1,8 @@
 {
   // Editor settings
   "editor.renderWhitespace": "all",
+  "typescript.updateImportsOnPaste.enabled": false,
+  "editor.pasteAs.enabled": false,
   "editor.rulers": [120],
   "editor.formatOnSave": true,
   "files.exclude": {
