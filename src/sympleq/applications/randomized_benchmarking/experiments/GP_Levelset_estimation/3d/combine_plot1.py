@@ -1,8 +1,9 @@
 """Assemble the Plot 1 building blocks into one publication figure.
 
 The volume panels are drawn natively with Matplotlib. Each representative
-trajectory has a real inset axis containing the all-seed trajectories, and the
-two device panels share one legend. The existing grids are rendered in memory
+trajectory has a real inset axis zooming in on the same representative seeds,
+and the two device panels share one legend. All-seed comparisons remain separate
+building blocks in plot1.py. The existing grids are rendered in memory
 with larger labels and one shared legend for the eight 3-D panels. Only the
 combined PDF is saved.
 """
@@ -19,6 +20,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pymupdf
+from matplotlib.ticker import FuncFormatter
 
 import plot1
 
@@ -122,10 +124,10 @@ def load_device_data(device: str) -> dict[str, object]:
     }
 
 
-def style_inset(ax, *, device: str) -> None:
+def style_inset(ax) -> None:
     """Apply the compact limits and typography used by the detail inset."""
-    ax.set_xlim(100, 503)
-    ax.set_ylim((45, 57) if device == "H2-2" else (40, 57))
+    ax.set_xlim(150, 503)
+    ax.set_ylim(48, 56)
     if SHOW_INSET_AXIS_LABELS:
         ax.set_xlabel("HQC spent", fontsize=INSET_LABELSIZE, labelpad=2)
         ax.set_ylabel("QARB-Volume", fontsize=INSET_LABELSIZE, labelpad=2)
@@ -174,28 +176,23 @@ def add_measurement_shot_axes(
         )
 
 
-def draw_all_seed_inset(
+def draw_representative_inset(
     parent_ax,
     data: dict[str, object],
-    *,
-    device: str,
 ) -> None:
-    """Draw all PULSE and FLARE seed trajectories in a true inset axis."""
+    """Zoom in on the representative runs and use their own shot counts."""
     inset = parent_ax.inset_axes(INSET_BOUNDS)
-    pulse_results = data["pulse_results"]
-    flare_results = data["flare_results"]
-    pulse_colors = plt.cm.Reds(np.linspace(0.85, 0.35, len(pulse_results)))
-    flare_colors = plt.cm.Blues(np.linspace(0.85, 0.35, len(flare_results)))
+    pulse_rows = data["pulse_results"][data["pulse_seed"]]
+    flare_rows = data["flare_results"][data["flare_seed"]]
 
-    for color, (_, rows) in zip(pulse_colors, sorted(pulse_results.items())):
-        inset.plot(
-            rows[:, 0],
-            rows[:, 1],
-            color=color,
-            marker="o",
-            markersize=1.7,
-            linewidth=0.8,
-        )
+    inset.plot(
+        pulse_rows[:, 0],
+        pulse_rows[:, 1],
+        color=plot1.PULSE_COLOR,
+        marker="o",
+        markersize=1.7,
+        linewidth=0.8,
+    )
     plot1.add_final_reference(
         inset,
         data["pulse_final"],
@@ -205,15 +202,14 @@ def draw_all_seed_inset(
         bounds_alpha=0.25,
     )
 
-    for color, (_, rows) in zip(flare_colors, sorted(flare_results.items())):
-        inset.plot(
-            rows[:, 0],
-            rows[:, 1],
-            color=color,
-            marker="o",
-            markersize=1.7,
-            linewidth=0.8,
-        )
+    inset.plot(
+        flare_rows[:, 0],
+        flare_rows[:, 1],
+        color=plot1.FLARE_COLOR,
+        marker="o",
+        markersize=1.7,
+        linewidth=0.8,
+    )
     plot1.add_final_reference(
         inset,
         data["flare_final"],
@@ -221,10 +217,7 @@ def draw_all_seed_inset(
         method="FLARE",
         shade_bounds=True,
     )
-    style_inset(inset, device=device)
-
-    pulse_rows = pulse_results[data["pulse_measurement_seed"]]
-    flare_rows = flare_results[data["flare_measurement_seed"]]
+    style_inset(inset)
     add_measurement_shot_axes(inset, pulse_rows, flare_rows, compact=True)
 
 
@@ -234,7 +227,7 @@ def draw_volume_panel(
     *,
     device: str,
 ) -> None:
-    """Draw one representative volume panel and its all-seed inset."""
+    """Draw representative volume trajectories and their zoomed inset."""
     pulse_rows = data["pulse_results"][data["pulse_seed"]]
     flare_rows = data["flare_results"][data["flare_seed"]]
 
@@ -303,7 +296,7 @@ def draw_volume_panel(
     ax.tick_params(axis="both", which="both", labelsize=TICK_LABELSIZE)
     ax.set_title(device, pad=2, fontsize=DEVICE_LABELSIZE)
     add_measurement_shot_axes(ax, pulse_rows, flare_rows)
-    draw_all_seed_inset(ax, data, device=device)
+    draw_representative_inset(ax, data)
 
 
 def volume_panels_pdf(
@@ -419,14 +412,20 @@ def grid_panel_pdf(
         grid_path=grid_path,
         xlim=(0.1, 1.0 if name == "flare_final" else 0.97),
         ylim=(20, 56),
-        zlim=(1.5, 3.50),
+        zlim=(2.0, 3.50),
         show_legend=False,
         axis_labelsize=GRID_AXIS_LABELSIZE,
         tick_labelsize=GRID_TICK_LABELSIZE,
         save=False,
         show=False,
     )
-    handles, labels = fig.axes[0].get_legend_handles_labels()
+    ax = fig.axes[0]
+    ax.set_zticks(np.log10([100, 300, 1000, 3000]))
+    ax.zaxis.set_major_formatter(FuncFormatter(lambda value, _: f"{10**value:g}"))
+    for label in fig.texts:
+        if label.get_text() == r"$\log_{10}(n_{\rm g})$":
+            label.set_text(r"$n_{\rm g}$")
+    handles, labels = ax.get_legend_handles_labels()
     displayed_labels = {
         "Success-side volume": f"{method} success volume",
         (
