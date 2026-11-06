@@ -234,7 +234,10 @@ def primary_components_crt(F: np.ndarray, p: int) -> Dict:
     # Find the minimal polynomial of F over GF(p)
     # the polynomial is returned as a list of coefficients over GF(p), starting from the constant term at index 0
     mF = minimal_polynomial(F, p)
+    # lists the factors of mF
     raw = factor_poly_over_fp(mF, p)
+    # Normalize the factorization output. Combines like factors to return a list of tuples (q, e) where q is the monic
+    # polynomial and e is its exponent
     factors = _normalize_factorization_output(raw, p)
 
     # Build the list of pairwise coprime moduli f_i = q_i^{e_i}
@@ -257,10 +260,12 @@ def primary_components_crt(F: np.ndarray, p: int) -> Dict:
     # Project onto each primary subspace V_i = ker(fi(F)) using a Bezout
     # coefficient for the complementary factor Mi = mF / fi.
     for (q, e), fi in zip(factors, moduli):
+        # sanity check: fi should divide mF
         Mi, r = poly_divmod(mF, fi, p)
         if not poly_is_zero(r):
             raise RuntimeError("CRT setup failed: fi does not divide mF (should not happen).")
 
+        # sanity check: Mi and fi should be coprime
         s, t, g = extended_euclidean(Mi, fi, p)   # s*Mi + t*fi = g
         # g must be 1 (monic constant)
         if not (len(g) == 1 and int(g[0]) % p == 1):
