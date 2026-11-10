@@ -55,7 +55,7 @@ PARAMETER_SPECS = {
     "two_q_depol": ("alpha_2q_depol", 0.25, 6),
     "one_q_dephase": ("alpha_1q_dephase", 0.25, 6),
     "two_q_dephase": ("alpha_2q_dephase", 0.25, 6),
-    "one_q_dephase_nq": ("alpha_1q_dephase_nq", 0.0, 0.1),
+    "one_q_dephase_nq": ("alpha_1q_dephase_nq", 0.0, 0.2),
     "two_q_dephase_nq": ("alpha_2q_dephase_nq", 0.0, 0.01),
 }
 
