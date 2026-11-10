@@ -40,12 +40,24 @@ from sympleq.integrations.quantinuum.utils import NATIVE_GATES_SET
 
 
 ROOT = Path("Personal/Data/optuna_opt")
-RES_ROOT = Path("Personal/Data/optuna_opt_liner_dep")
+WARM_START_CSV = Path("Personal/Data/optuna_opt_liner_dep/optuna_trials.csv")
+RES_ROOT = Path("Personal/Data/optuna_opt_liner_dep_warmstart")
 SUMMARY_CSV = RES_ROOT / "optuna_trials.csv"
-N_TRIALS = 2000
+N_TRIALS = 12000
+WARM_START_TRIALS = 50
 GRID_GATES_BOUNDS = (100, 3000)
-GRID_RATIO_BOUNDS = (0.1, 0.97)
+GRID_RATIO_BOUNDS = (0.2, 0.97)
+LOSS_RATIO_BOUNDS = (0.2, 0.97)
 NO_CONTOUR_LOSS = 1.0e9
+
+PARAMETER_SPECS = {
+    "one_q_depol": ("alpha_1q_depol", 0.25, 6),
+    "two_q_depol": ("alpha_2q_depol", 0.25, 6),
+    "one_q_dephase": ("alpha_1q_dephase", 0.25, 6),
+    "two_q_dephase": ("alpha_2q_dephase", 0.25, 6),
+    "one_q_dephase_nq": ("alpha_1q_dephase_nq", 0.0, 0.01),
+    "two_q_dephase_nq": ("alpha_2q_dephase_nq", 0.0, 0.01),
+}
 
 DATASETS = {
     "q26_with_vwrap": (
@@ -65,6 +77,33 @@ DATASETS = {
         ROOT / "contours/plot2_q56_without_fake_h_h2_1_contour.csv",
     ),
 }
+
+
+def enqueue_warm_start(study):
+    with WARM_START_CSV.open(newline="", encoding="utf-8-sig") as handle:
+        rows = [
+            row for row in csv.DictReader(handle)
+            if 0 <= float(row["loss"]) < NO_CONTOUR_LOSS
+        ]
+    rows.sort(key=lambda row: float(row["loss"]))
+    seen = set()
+    for row in rows:
+        params = {name: float(row[name]) for name in PARAMETER_SPECS}
+        if any(
+            not low <= params[name] <= high
+            for name, (_, low, high) in PARAMETER_SPECS.items()
+        ):
+            continue
+        key = tuple(params.values())
+        if key in seen:
+            continue
+        study.enqueue_trial(
+            params, user_attrs={"warm_start_trial": int(row["trial"])}
+        )
+        seen.add(key)
+        if len(seen) >= WARM_START_TRIALS:
+            break
+    print(f"[warm-start] queued {len(seen)} trials from {WARM_START_CSV}", flush=True)
 
 
 def build_circuits(manifest_path):
@@ -111,6 +150,17 @@ def load_reference(csv_path):
 
 
 def chamfer_loss(ref, target):
+    ref = ref[
+        (ref[:, 0] > LOSS_RATIO_BOUNDS[0])
+        & (ref[:, 0] <= LOSS_RATIO_BOUNDS[1])
+    ]
+    target = target[
+        (target[:, 0] > LOSS_RATIO_BOUNDS[0])
+        & (target[:, 0] <= LOSS_RATIO_BOUNDS[1])
+    ]
+    if not len(ref) or not len(target):
+        return NO_CONTOUR_LOSS
+
     distances_squared = np.sum(
         (ref[:, None, :] - target[None, :, :]) ** 2,
         axis=2,
@@ -202,12 +252,8 @@ def run_dataset(name, prepared, backend, run_dir):
 
 def objective(trial, prepared, references):
     params = {
-        "alpha_1q_depol": trial.suggest_float("one_q_depol", 0.1, 5),
-        "alpha_2q_depol": trial.suggest_float("two_q_depol", 0.1, 5),
-        "alpha_1q_dephase": trial.suggest_float("one_q_dephase", 0.1, 5),
-        "alpha_2q_dephase": trial.suggest_float("two_q_dephase", 0.1, 5),
-        "alpha_1q_dephase_nq": trial.suggest_float("one_q_dephase_nq", 0.001, 0.1),
-        "alpha_2q_dephase_nq": trial.suggest_float("two_q_dephase_nq", 0.001, 0.1),
+        backend_name: trial.suggest_float(name, low, high)
+        for name, (backend_name, low, high) in PARAMETER_SPECS.items()
     }
     run_dir = RES_ROOT / f"trial_{trial.number:04d}"
     losses = {}
@@ -259,7 +305,7 @@ if __name__ == "__main__":
     prepared = {name: build_circuits(paths[0]) for name, paths in DATASETS.items()}
     references = {name: load_reference(paths[1]) for name, paths in DATASETS.items()}
 
-    with SUMMARY_CSV.open("w", newline="", encoding="utf-8") as handle:
+    with SUMMARY_CSV.open("x", newline="", encoding="utf-8") as handle:
         csv.writer(handle).writerow([
             "trial", "one_q_depol", "two_q_depol",
             "one_q_dephase", "two_q_dephase",
@@ -273,6 +319,7 @@ if __name__ == "__main__":
         direction="minimize",
         sampler=optuna.samplers.TPESampler(seed=42),
     )
+    enqueue_warm_start(study)
     study.optimize(
         lambda trial: objective(trial, prepared, references),
         n_trials=N_TRIALS,
