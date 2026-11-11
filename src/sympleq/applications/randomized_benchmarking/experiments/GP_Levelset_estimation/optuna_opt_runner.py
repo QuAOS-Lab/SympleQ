@@ -42,7 +42,7 @@ from sympleq.integrations.quantinuum.utils import NATIVE_GATES_SET
 ROOT = Path("Personal/Data/optuna_opt")
 WARM_START_CSV = Path("Personal/Data/optuna_opt_liner_dep/optuna_trials.csv")
 RES_ROOT = Path("Personal/Data/optuna_opt_liner_dep_warmstart")
-SUMMARY_CSV = RES_ROOT / "optuna_trials.csv"
+SUMMARY_CSV = RES_ROOT / "optuna_trials_1.csv"
 N_TRIALS = 12000
 WARM_START_TRIALS = 50
 GRID_GATES_BOUNDS = (100, 3000)

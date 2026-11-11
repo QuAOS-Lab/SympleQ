@@ -1,8 +1,8 @@
 """Assemble the Plot 1 building blocks into one publication figure.
 
-The volume panels are drawn natively with Matplotlib. Each representative
-trajectory has a real inset axis zooming in on the same representative seeds,
-and the two device panels share one legend. All-seed comparisons remain separate
+The volume panels use broken linear y-axes and share one legend. The
+representative inset helpers are retained, but their call is commented out.
+All-seed comparisons remain separate
 building blocks in plot1.py. The existing grids are rendered in memory
 with larger labels and one shared legend for the eight 3-D panels. Only the
 combined PDF is saved.
@@ -50,6 +50,9 @@ INSET_TICK_LABELSIZE = 8
 GRID_AXIS_LABELSIZE = 20
 GRID_TICK_LABELSIZE = 15
 SHOW_INSET_AXIS_LABELS = False
+VOLUME_UPPER_LIMITS = (45, 60)
+VOLUME_LOWER_LIMITS = (14, 40)
+VOLUME_HEIGHT_RATIOS = (85, 15)
 
 # Bounds are in parent-axis coordinates: left, bottom, width, height.
 INSET_BOUNDS = (0.50, 0.10, 0.47, 0.46)
@@ -226,8 +229,9 @@ def draw_volume_panel(
     data: dict[str, object],
     *,
     device: str,
+    show_header: bool = True,
 ) -> None:
-    """Draw representative volume trajectories and their zoomed inset."""
+    """Draw unchanged trajectories for either section of the broken y-axis."""
     pulse_rows = data["pulse_results"][data["pulse_seed"]]
     flare_rows = data["flare_results"][data["flare_seed"]]
 
@@ -294,21 +298,62 @@ def draw_volume_panel(
     ax.set_xlabel("HQC spent", fontsize=AXIS_LABELSIZE)
     ax.set_ylabel("QARB-Volume", fontsize=AXIS_LABELSIZE)
     ax.tick_params(axis="both", which="both", labelsize=TICK_LABELSIZE)
-    ax.set_title(device, pad=2, fontsize=DEVICE_LABELSIZE)
-    add_measurement_shot_axes(ax, pulse_rows, flare_rows)
-    draw_representative_inset(ax, data)
+    if show_header:
+        ax.set_title(device, pad=2, fontsize=DEVICE_LABELSIZE)
+        add_measurement_shot_axes(ax, pulse_rows, flare_rows)
+    # draw_representative_inset(ax, data)
 
 
 def volume_panels_pdf(
     device_data: dict[str, dict[str, object]],
 ) -> tuple[dict[str, bytes], bytes]:
-    """Export each volume panel independently to avoid shared-row margins."""
+    """Export each device with a compressed lower and enlarged upper y-axis."""
     panels = {}
     for device in ("H2-1", "H2-2"):
-        fig, ax = plt.subplots(figsize=(8.0, 4.4))
+        fig, (upper_ax, lower_ax) = plt.subplots(
+            2,
+            1,
+            sharex=True,
+            figsize=(8.0, 4.4),
+            gridspec_kw={
+                "height_ratios": VOLUME_HEIGHT_RATIOS,
+                "hspace": 0.14,
+            },
+        )
         fig.subplots_adjust(left=0.14, right=0.98, bottom=0.12, top=0.78)
-        draw_volume_panel(ax, device_data[device], device=device)
-        handles, labels = ax.get_legend_handles_labels()
+        draw_volume_panel(upper_ax, device_data[device], device=device)
+        draw_volume_panel(
+            lower_ax, device_data[device], device=device, show_header=False
+        )
+        upper_ax.set_ylim(*VOLUME_UPPER_LIMITS)
+        lower_ax.set_ylim(*VOLUME_LOWER_LIMITS)
+        upper_ax.set_ylim(45, 58)
+        lower_ax.set_ylim(14, 30)
+        # upper_ax.set_yticks([45, 50, 55])
+        lower_ax.set_yticks([20, 30])
+        upper_ax.set_xlabel("")
+        upper_ax.set_ylabel("")
+        lower_ax.set_ylabel("")
+        fig.supylabel("QARB-Volume", x=0.04, y=0.45, fontsize=AXIS_LABELSIZE)
+        upper_ax.spines["bottom"].set_visible(False)
+        lower_ax.spines["top"].set_visible(False)
+        upper_ax.tick_params(axis="x", which="both", bottom=False, labelbottom=False)
+
+        # Point-sized diagonal markers keep the break marks equal on both axes.
+        for ax, edge in ((upper_ax, 0), (lower_ax, 1)):
+            ax.plot(
+                [0, 1],
+                [edge, edge],
+                transform=ax.transAxes,
+                marker=[(-1, -0.5), (1, 0.5)],
+                markersize=8,
+                linestyle="none",
+                color="black",
+                markeredgewidth=1,
+                clip_on=False,
+                label="_nolegend_",
+            )
+        handles, labels = upper_ax.get_legend_handles_labels()
         buffer = BytesIO()
         fig.savefig(buffer, format="pdf")
         panels[device] = buffer.getvalue()
