@@ -40,14 +40,15 @@ from sympleq.integrations.quantinuum.utils import NATIVE_GATES_SET
 
 
 ROOT = Path("Personal/Data/optuna_opt")
-WARM_START_CSV = Path("Personal/Data/optuna_opt_liner_dep/optuna_trials.csv")
+WARM_START_CSV = Path("Personal/Data/optuna_opt_liner_dep_warmstart/optuna_trials_1.csv")
 RES_ROOT = Path("Personal/Data/optuna_opt_liner_dep_warmstart")
-SUMMARY_CSV = RES_ROOT / "optuna_trials_1.csv"
+SUMMARY_CSV = RES_ROOT / "optuna_trials_2.csv"
 N_TRIALS = 12000
 WARM_START_TRIALS = 50
 GRID_GATES_BOUNDS = (100, 3000)
 GRID_RATIO_BOUNDS = (0.2, 0.97)
 LOSS_RATIO_BOUNDS = (0.2, 0.97)
+WITH_VWRAP_LOSS_RATIO_BOUNDS = (0.2, 0.8)
 NO_CONTOUR_LOSS = 1.0e9
 
 PARAMETER_SPECS = {
@@ -149,14 +150,14 @@ def load_reference(csv_path):
     ))
 
 
-def chamfer_loss(ref, target):
+def chamfer_loss(ref, target, ratio_bounds=LOSS_RATIO_BOUNDS):
     ref = ref[
-        (ref[:, 0] > LOSS_RATIO_BOUNDS[0])
-        & (ref[:, 0] <= LOSS_RATIO_BOUNDS[1])
+        (ref[:, 0] > ratio_bounds[0])
+        & (ref[:, 0] <= ratio_bounds[1])
     ]
     target = target[
-        (target[:, 0] > LOSS_RATIO_BOUNDS[0])
-        & (target[:, 0] <= LOSS_RATIO_BOUNDS[1])
+        (target[:, 0] > ratio_bounds[0])
+        & (target[:, 0] <= ratio_bounds[1])
     ]
     if not len(ref) or not len(target):
         return NO_CONTOUR_LOSS
@@ -265,10 +266,15 @@ def objective(trial, prepared, references):
             **params,
         )
         contour, contour_path = run_dataset(name, prepared[name], backend, run_dir)
+        ratio_bounds = (
+            WITH_VWRAP_LOSS_RATIO_BOUNDS
+            if name.endswith("_with_vwrap")
+            else LOSS_RATIO_BOUNDS
+        )
         losses[name] = (
             NO_CONTOUR_LOSS
             if contour is None
-            else float(chamfer_loss(references[name], contour))
+            else float(chamfer_loss(references[name], contour, ratio_bounds))
         )
         trial.set_user_attr(f"{name}_contour", str(contour_path))
     for name, loss in losses.items():
