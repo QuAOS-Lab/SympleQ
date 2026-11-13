@@ -986,8 +986,9 @@ class Aquire:
             i = len(self.systematic_variance)
             if self.update_steps[i] > len(self.diagnostic_results):
                 break
-            new_cliques = self.cliques[self.update_steps[i - 1]:self.update_steps[i]]
-            new_diagnostic_results = self.diagnostic_results[self.update_steps[i - 1]:self.update_steps[i]]
+            start = self.update_steps[i - 1] if i > 0 else 0
+            new_cliques = self.cliques[start:self.update_steps[i]]
+            new_diagnostic_results = self.diagnostic_results[start:self.update_steps[i]]
             self.diagnostic_data = update_diagnostic_data(new_cliques,
                                                           new_diagnostic_results,
                                                           self.diagnostic_data,

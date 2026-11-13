@@ -148,7 +148,7 @@ def mcmc_starting_point(d: int, c: np.ndarray, A: np.ndarray) -> tuple[np.ndarra
 # MONTE-CARLO INTEGRATION
 
 @jit(nopython=True)
-def psi_sample(psi: np.ndarray, alpha: float, d: int) -> np.ndarray:
+def psi_sample(psi: np.ndarray, alpha: float, d: int, mode: str = 'linear') -> np.ndarray:
     """
     Sample a new quantum state for Monte Carlo integration.
 
@@ -160,10 +160,22 @@ def psi_sample(psi: np.ndarray, alpha: float, d: int) -> np.ndarray:
     Returns:
         np.ndarray: The new sampled quantum state, normalized.
     """
-    psi_prime = rand_state(d)
-    psi_new = alpha * psi + np.sqrt(1 - alpha**2) * psi_prime
-    psi_new_norm = np.sqrt(np.sum(np.abs(psi_new)**2))
-    return psi_new / psi_new_norm
+    chi = rand_state(d)
+    if mode == 'linear':
+        psi_new = alpha * psi + np.sqrt(1 - alpha**2) * chi
+        psi_new_norm = np.sqrt(np.sum(np.abs(psi_new)**2))
+        psi_result = psi_new / psi_new_norm
+    elif mode == 'improved':
+        # TODO: Works, but needs to be better tuned with the rest of the algorithm. The idea is to sample in the
+        # orthogonal space of psi with fixed distance, which is not what the rest of the algorithm expects.
+        chi_prime = chi - np.vdot(psi, chi) * psi
+        chi_prime_norm = np.sqrt(np.sum(np.abs(chi_prime)**2))
+        v = chi_prime / chi_prime_norm
+        theta = alpha   # + np.random.normal(0, alpha*0.1)
+        psi_result = np.cos(np.pi * theta / 2) * psi + np.sin(np.pi * theta / 2) * v
+    else:
+        raise ValueError("Invalid mode. Choose 'linear' or 'improved'.")
+    return psi_result
 
 
 @jit(nopython=True)
