@@ -555,3 +555,51 @@ class TestAquire:
         model.info()
         model.info(name="circuits")
         fig, ax = model.plot()
+
+
+def _two_qubit_hamiltonian():
+    return PauliSum.from_string(['x1z0 x0z0', 'x0z1 x0z1', 'x1z0 x1z0'], dimensions=[2, 2], weights=[1, 1, 1],
+                                phases=[0, 0, 0])
+
+
+def test_outcome_distribution_function_is_used_and_cached():
+    """With outcome_distribution_function set, every simulated outcome is drawn from it, and it is called once per
+    clique and circuit kind."""
+    H = _two_qubit_hamiltonian()
+    psi = np.ones(4) / 2
+    calls = []
+
+    def always_zero(circuit, state, diagnostic=False):
+        calls.append(diagnostic)
+        pdf = np.zeros(4)
+        pdf[0] = 1.0
+        return pdf
+
+    model = Aquire(H=H, psi=psi, outcome_distribution_function=always_zero, enable_diagnostics=True)
+    model.simulate_observable(update_steps=[10, 30])
+    assert all(np.all(r == 0) for r in model.measurement_results)
+    assert np.all(model.diagnostic_data[:, 0] == 0)              # no diagnostic shot failed
+    n_cliques = len({str(c) for c in model.cliques})
+    assert calls.count(False) == n_cliques and calls.count(True) == n_cliques
+
+
+def test_outcome_distribution_function_noisy_diagnostics():
+    """A uniformly random outcome fails the all-zero diagnostic check with probability 1 - 1/D."""
+    H = _two_qubit_hamiltonian()
+    psi = np.ones(4) / 2
+    np.random.seed(3)
+    model = Aquire(H=H, psi=psi, enable_diagnostics=True,
+                   outcome_distribution_function=lambda circuit, state, diagnostic=False: np.ones(4) / 4)
+    model.simulate_observable(update_steps=[100, 400])
+    failed = model.diagnostic_data[:, 0].sum() / model.diagnostic_data.sum()
+    assert abs(failed - 0.75) < 0.1
+
+
+def test_outcome_distribution_function_validation():
+    H = _two_qubit_hamiltonian()
+    psi = np.ones(4) / 2
+    with pytest.raises(ValueError):
+        Aquire(H=H, psi=psi, outcome_distribution_function="not a function")
+    model = Aquire(H=H, psi=psi, outcome_distribution_function=lambda circuit, state, diagnostic=False: np.ones(3))
+    with pytest.raises(ValueError):
+        model.simulate_observable(update_steps=[5])

@@ -275,6 +275,18 @@ def config_params() -> dict:
                             " Additional arguments can be parsed via error_function_args and error_function_kwargs."),
             "accepted": "Callable"
         },
+        "outcome_distribution_function": {
+            "type": "Callable | None",
+            "optional": True,
+            "default": None,
+            "description": ("Optional noisy simulator. Called as f(circuit, state, diagnostic=False), it returns the "
+                            "probability of every computational-basis outcome of measuring state after circuit, "
+                            "including any hardware noise; diagnostic is True for diagnostic circuits. When given, "
+                            "simulated measurement and diagnostic results are drawn from it, in place of the ideal "
+                            "simulation and noise_probability_function / error_function. Results are cached per "
+                            "clique."),
+            "accepted": "Callable | None"
+        },
         "commutation_graph": {
             "type": "graph",
             "description": ("Graph encoding the commutation relation between the paulistrings in the PauliSum. Here 1 "

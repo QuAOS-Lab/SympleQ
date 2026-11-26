@@ -48,7 +48,8 @@ class AquireConfig:
                  noise_probability_function_kwargs: dict = {},
                  error_function: Callable = standard_error_function,
                  error_function_args: tuple = (),
-                 error_function_kwargs: dict = {}):
+                 error_function_kwargs: dict = {},
+                 outcome_distribution_function: Callable | None = None):
         self.Hamiltonian = Hamiltonian
         self.psi = np.array(psi) if psi is not None else None
 
@@ -84,6 +85,8 @@ class AquireConfig:
         self.error_function = error_function
         self.error_function_args = error_function_args
         self.error_function_kwargs = error_function_kwargs
+        # optional noisy simulator: replaces the ideal simulation and the noise functions above
+        self.outcome_distribution_function = outcome_distribution_function
 
         if self.psi is not None:
             self.psi = np.array(self.psi)
@@ -149,7 +152,8 @@ class AquireConfig:
 
         # check noise and error functions
         self.test_noise_and_error_function()
-        pass
+        if self.outcome_distribution_function is not None and not callable(self.outcome_distribution_function):
+            raise ValueError("outcome_distribution_function must be callable or None.")
 
     def update_all(self):
         """
@@ -508,6 +512,7 @@ class Aquire:
         self.diagnostic_states = []
         self.diagnostic_results = []
         self.diagnostic_data = np.zeros((self._H.n_paulis(), 2))
+        self._outcome_distributions = {}  # cache for config.outcome_distribution_function
 
         # checkpoints (some of the above data collected at specific points)
         self.covariance_graph_checkpoints = []
@@ -997,6 +1002,41 @@ class Aquire:
             self.systematic_variance.append(calculate_systematic_variance_estimate(self.data, self.H.weights,
                                                                                    self.diagnostic_data))
 
+    def outcome_distribution(self, circuit: Circuit, state: np.ndarray, key: tuple,
+                             diagnostic: bool = False) -> np.ndarray:
+        """
+        Outcome probabilities of a circuit from config.outcome_distribution_function, cached.
+
+        The same clique always gives the same measurement (or diagnostic) circuit, so the distribution is computed once
+        per clique and state, identified by key.
+
+        Parameters
+        ----------
+        circuit : Circuit
+            The measurement or diagnostic circuit.
+        state : np.ndarray
+            The input state of the circuit.
+        key : tuple
+            Identifies the circuit for the cache, e.g. ("measurement", str(clique)).
+        diagnostic : bool, optional
+            Passed on to the function: True for diagnostic circuits.
+
+        Returns
+        -------
+        np.ndarray
+            The probability of every computational-basis outcome, normalised.
+        """
+        state = np.asarray(state)
+        key = key + (state.tobytes(),)
+        if key not in self._outcome_distributions:
+            pdf = np.asarray(self.config.outcome_distribution_function(circuit, state, diagnostic=diagnostic),
+                             dtype=float)
+            if pdf.shape != (int(np.prod(self.H.dimensions)),) or np.any(pdf < -1e-12):
+                raise ValueError("outcome_distribution_function must return one probability per outcome.")
+            pdf = np.clip(pdf, 0, None)
+            self._outcome_distributions[key] = pdf / pdf.sum()
+        return self._outcome_distributions[key]
+
     def simulate_measurement_results(self):
         """
         Simulate measurement results for newly allocated measurements.
@@ -1018,6 +1058,10 @@ class Aquire:
         simulated_measurement_results = []
         for aa in self.cliques_since_last_update():
             P1, C, _ = self.circuit_dictionary[str(aa)]
+            if self.config.outcome_distribution_function is not None:
+                pdf = self.outcome_distribution(C, self.config.psi, ("measurement", str(aa)))
+                simulated_measurement_results.append(sample_outcome(pdf, self.H.dimensions))
+                continue
             result = simulate_measurement(P1, self.config.psi, C)
             if self.config.enable_simulated_hardware_noise:
                 noise_probability = self.config.noise_probability_function(C, *self.config.noise_probability_args,
@@ -1064,7 +1108,14 @@ class Aquire:
             raise Exception("State psi not provided, cannot simulate measurement results.")
         self.config.enable_diagnostics = True
         simulated_diagnostic_results = []
+        offset = len(self.diagnostic_results)
         for i, dsp_circuit in enumerate(self.diagnostic_circuits_since_last_update()):
+            if self.config.outcome_distribution_function is not None:
+                state = self.diagnostic_states[offset + i]
+                pdf = self.outcome_distribution(dsp_circuit, state, ("diagnostic", str(self.cliques[offset + i])),
+                                                diagnostic=True)
+                simulated_diagnostic_results.append(sample_outcome(pdf, self.H.dimensions))
+                continue
             result = simulate_measurement(self.H, self.diagnostic_states[i], dsp_circuit)
             noise_probability = self.config.noise_probability_function(dsp_circuit, *self.config.noise_probability_args,
                                                                        **self.config.noise_kwargs)
@@ -1336,6 +1387,11 @@ def simulate_measurement(paulisum: PauliSum, psi: list[float | complex] | list[f
     a1 = np.random.choice(np.prod(dims1), p=pdf)
     result = int_to_bases(a1, dims1)
     return result
+
+
+def sample_outcome(pdf: np.ndarray, dimensions: list[int]) -> np.ndarray:
+    """Draw one measurement outcome (the value of every qudit) from the outcome probabilities pdf."""
+    return int_to_bases(np.random.choice(len(pdf), p=pdf), dimensions)
 
 
 def plot_aquire(model: Aquire, filename: str | None = None):
