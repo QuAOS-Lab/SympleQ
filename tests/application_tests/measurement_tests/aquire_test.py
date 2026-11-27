@@ -7,7 +7,12 @@ import pytest
 from sympleq.applications.measurement.aquire import Aquire, AquireConfig, simulate_measurement
 from sympleq.core.paulis import PauliSum, PauliString
 from sympleq.applications.measurement.covariance_graph import commutation_graph, all_maximal_cliques
-from sympleq.applications.measurement.allocation import construct_circuit_list
+from sympleq.applications.measurement.allocation import (construct_circuit_list, construct_diagnostic_circuits,
+                                                         construct_diagnostic_states,
+                                                         construct_diagnostic_expected_outputs, update_diagnostic_data)
+from sympleq import bases_to_int
+from sympleq.core.circuits import Circuit
+from sympleq.core.circuits.gates import GATES
 from sympleq.core.paulis.utils import covariance_matrix
 
 
@@ -603,3 +608,126 @@ def test_outcome_distribution_function_validation():
     model = Aquire(H=H, psi=psi, outcome_distribution_function=lambda circuit, state, diagnostic=False: np.ones(3))
     with pytest.raises(ValueError):
         model.simulate_observable(update_steps=[5])
+
+
+# random-input diagnostics (diagnostic_mode="random", App. D of arXiv:2605.00682)
+
+def _two_qutrit_hamiltonian():
+    # Z Z and X X^2 commute but not quditwise, so general commutation needs an entangling circuit
+    return PauliSum.from_string(['x1z0 x0z0', 'x0z1 x0z1', 'x1z0 x2z0'], dimensions=[3, 3], weights=[1, 1, 1],
+                                phases=[0, 0, 0]).make_hermitian()
+
+
+def _uniform_state(H):
+    D = int(np.prod(H.dimensions))
+    return np.ones(D) / np.sqrt(D)
+
+
+def _no_noise(circuit, *args, **kwargs):
+    return 0.0
+
+
+def _random_mode_diagnostics(H, shots=60, seed=0):
+    """Diagnostic circuits of a general-commutation allocation, with random input states."""
+    np.random.seed(seed)
+    model = Aquire(H=H, psi=_uniform_state(H), commutation_mode="general", enable_diagnostics=True,
+                   diagnostic_mode="random")
+    circuits = construct_diagnostic_circuits(model.allocate_measurements(shots=shots))
+    states, preparations = construct_diagnostic_states(circuits, mode="random")
+    return circuits, states, preparations
+
+
+@pytest.mark.parametrize("hamiltonian", [_two_qubit_hamiltonian, _two_qutrit_hamiltonian])
+def test_random_diagnostic_states_are_prepared_basis_states(hamiltonian):
+    H = hamiltonian()
+    D = int(np.prod(H.dimensions))
+    _, states, preparations = _random_mode_diagnostics(H)
+    zero = np.zeros(D)
+    zero[0] = 1
+    for state, preparation in zip(states, preparations):
+        assert np.count_nonzero(state) == 1 and np.isclose(np.linalg.norm(state), 1)
+        assert np.allclose(preparation.unitary() @ zero, state)
+    assert len({int(np.flatnonzero(s)[0]) for s in states}) > 1          # the inputs differ from shot to shot
+
+
+@pytest.mark.parametrize("hamiltonian", [_two_qubit_hamiltonian, _two_qutrit_hamiltonian])
+def test_random_diagnostic_expected_outputs_match_simulation(hamiltonian):
+    H = hamiltonian()
+    circuits, states, _ = _random_mode_diagnostics(H)
+    assert any(gate.name == "CX" for c in circuits for gate in c.gates)   # entangling circuits are covered
+    expected = construct_diagnostic_expected_outputs(circuits, states)
+    for circuit, state, output in zip(circuits, states, expected):
+        ideal = circuit.unitary() @ state
+        assert np.isclose(abs(ideal[bases_to_int(output, H.dimensions)]), 1)
+
+
+def test_random_diagnostic_expected_outputs_reject_non_computational_circuits():
+    circuit = Circuit.empty(dimensions=[3, 3])
+    circuit.add_gate(GATES.H, 0)
+    state = np.zeros(9)
+    state[0] = 1
+    with pytest.raises(ValueError):
+        construct_diagnostic_expected_outputs([circuit], [state])
+
+
+def test_update_diagnostic_data_random_mode_compares_with_expected_outputs():
+    cliques = [[0], [0, 1], [1]]
+    results = [np.array([1, 2]), np.array([1, 2]), np.array([0, 0])]
+    expected = [np.array([1, 2]), np.array([1, 0]), np.array([0, 0])]
+    data = update_diagnostic_data(cliques, results, np.zeros((2, 2)), mode="random", expected_outputs=expected)
+    assert np.array_equal(data, [[1, 1], [1, 1]])                      # only the second shot failed
+    data = update_diagnostic_data(cliques, results, np.zeros((2, 2)), mode="zero")
+    assert np.array_equal(data, [[2, 0], [1, 1]])                      # zero mode: any non-zero value fails
+    with pytest.raises(ValueError):
+        update_diagnostic_data(cliques, results, np.zeros((2, 2)), mode="random")
+
+
+def _exact_outcome_distribution(circuit, state, diagnostic=False):
+    return np.abs(circuit.unitary() @ state) ** 2
+
+
+@pytest.mark.parametrize("hamiltonian", [_two_qubit_hamiltonian, _two_qutrit_hamiltonian])
+@pytest.mark.parametrize("outcome_distribution_function", [None, _exact_outcome_distribution])
+def test_random_diagnostics_noiseless_never_fail(hamiltonian, outcome_distribution_function):
+    """Without noise no diagnostic shot fails, in later rounds too, so every shot is checked against its own input."""
+    H = hamiltonian()
+    np.random.seed(1)
+    model = Aquire(H=H, psi=_uniform_state(H), enable_diagnostics=True, diagnostic_mode="random",
+                   noise_probability_function=_no_noise, outcome_distribution_function=outcome_distribution_function)
+    model.simulate_observable(update_steps=[20, 100, 300])
+    assert model.diagnostic_data[:, 1].sum() > 0
+    assert np.all(model.diagnostic_data[:, 0] == 0)
+    assert len(model.diagnostic_expected_outputs) == len(model.diagnostic_results)
+
+
+def test_random_diagnostics_manual_input():
+    """Diagnostic results put in by hand (as from hardware) are checked against the expected outputs."""
+    np.random.seed(2)
+    H = PauliSum.from_random(6, [3, 3, 3], seed=2).make_hermitian()
+    model = Aquire(H=H, commutation_mode="general", calculate_true_values=False, enable_diagnostics=True,
+                   auto_update_settings=False, diagnostic_mode="random")
+    for _ in range(2):
+        circuits = model.allocate_measurements(shots=50)
+        diagnostic_circuits, _ = model.construct_diagnostic_circuits()
+        n = len(model.diagnostic_results)
+        psi = _uniform_state(H)
+        model.input_measurement_data([simulate_measurement(H, psi, circuit=c) for c in circuits])
+        model.input_diagnostic_data([simulate_measurement(H, model.diagnostic_states[n + i], circuit=c)
+                                     for i, c in enumerate(diagnostic_circuits)])
+    data = model.diagnostic_data_at_shot(100)
+    assert data[:, 1].sum() > 0 and np.all(data[:, 0] == 0)
+    wrong = [(r + 1) % np.asarray(H.dimensions) for r in model.diagnostic_results]   # every qudit read wrongly
+    model.diagnostic_results = wrong
+    assert np.all(model.diagnostic_data_at_shot(100)[:, 1] == 0)
+
+
+@pytest.mark.parametrize("diagnostic_mode", ["zero", "random"])
+def test_diagnostics_uniform_outcomes_fail_at_rate_one_minus_one_over_D(diagnostic_mode):
+    """A uniformly random outcome fails the diagnostic check with probability 1 - 1/D, whatever the input."""
+    H = _two_qutrit_hamiltonian()
+    np.random.seed(3)
+    model = Aquire(H=H, psi=_uniform_state(H), enable_diagnostics=True, diagnostic_mode=diagnostic_mode,
+                   outcome_distribution_function=lambda circuit, state, diagnostic=False: np.ones(9) / 9)
+    model.simulate_observable(update_steps=[100, 1100])
+    failed = model.diagnostic_data[:, 0].sum() / model.diagnostic_data.sum()
+    assert abs(failed - 8 / 9) < 0.06              # about 3 standard errors for the 1000 shots counted

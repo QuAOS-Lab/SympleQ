@@ -54,7 +54,8 @@ class GateNoiseSimulator:
         self._gates = {}
 
     def __call__(self, circuit, state, diagnostic=False):
-        """AQUIRE's outcome_distribution_function; diagnostics start from |0...0>, without state-preparation noise."""
+        """AQUIRE's outcome_distribution_function; diagnostics start from the given basis state, without
+        state-preparation noise."""
         return self.outcome_distribution(circuit, state, state_prep_noise=not diagnostic)
 
     def outcome_distribution(self, circuit, state, state_prep_noise=True):

@@ -1,6 +1,7 @@
 import numpy as np
 import random
 import itertools
+from sympleq import bases_to_int, int_to_bases
 from sympleq.core.paulis import PauliSum
 from sympleq.applications.measurement.covariance_graph import graph
 from sympleq.core.circuits import Circuit
@@ -10,6 +11,7 @@ from sympleq.core.circuits.gates import GATES
 H = GATES.H
 CX = GATES.CX
 S = GATES.S
+X = GATES.X
 
 
 def mcmc_number_initial_samples(shots: int, n_0: int = 500, scaling_factor: float = 1 / 10000) -> int:
@@ -442,7 +444,8 @@ def update_data(xxx: list[list[int]], rr: list[np.ndarray], X: np.ndarray, D: di
 
 
 def update_diagnostic_data(cliques: list[list[int]], diagnostic_results: list[np.ndarray],
-                           diagnostic_data: np.ndarray, mode: str = 'zero') -> np.ndarray:
+                           diagnostic_data: np.ndarray, mode: str = 'zero',
+                           expected_outputs: list[np.ndarray] | None = None) -> np.ndarray:
     """
     Updates the given diagnostic data matrix with the given measurement results and PauliSums.
 
@@ -455,7 +458,11 @@ def update_diagnostic_data(cliques: list[list[int]], diagnostic_results: list[np
     diagnostic_data : np.ndarray
         The diagnostic data matrix to be updated.
     mode : str, default='zero'
-        The mode of updating the diagnostic data matrix. Options are 'zero' and 'random'.
+        The mode of updating the diagnostic data matrix. Options are 'zero' and 'random'. In 'zero' mode a shot fails
+        if any qudit reads non-zero; in 'random' mode a shot fails if its outcome differs from its expected output.
+    expected_outputs : list[np.ndarray] | None, default=None
+        The ideal outcome of every diagnostic shot, in the same order as diagnostic_results. Required in 'random'
+        mode, ignored in 'zero' mode.
 
     Returns
     -------
@@ -469,7 +476,13 @@ def update_diagnostic_data(cliques: list[list[int]], diagnostic_results: list[np
             else:
                 diagnostic_data[cliques[i], 1] += 1
     elif mode == 'random':
-        raise Exception('Random diagnostic states not yet implemented')
+        if expected_outputs is None or len(expected_outputs) < len(diagnostic_results):
+            raise ValueError("Random diagnostic mode needs the expected output of every diagnostic shot.")
+        for i in range(len(diagnostic_results)):
+            if np.any(np.asarray(diagnostic_results[i]) != np.asarray(expected_outputs[i])):
+                diagnostic_data[cliques[i], 0] += 1
+            else:
+                diagnostic_data[cliques[i], 1] += 1
     else:
         raise Exception('Diagnostic state mode not recognized')
     return diagnostic_data
@@ -538,15 +551,16 @@ def construct_diagnostic_states(diagnostic_circuits: list[Circuit],
     diagnostic_circuits : list[Circuit]
         The list of diagnostic circuits to be used for constructing the diagnostic states.
     mode : str, optional
-        The mode of constructing the diagnostic states. Can be either 'zero' or 'random'. If 'zero', the diagnostic
-        states are the computational basis states. If 'random', the diagnostic states are random states
-        (not yet implemented). Defaults to 'zero'.
+        The mode of constructing the diagnostic states. Can be either 'zero' or 'random'. If 'zero', every diagnostic
+        state is |0...0>. If 'random' (the method of App. D of arXiv:2605.00682), every diagnostic state is a uniformly
+        random computational basis state, drawn with np.random. The diagnostic circuits permute computational basis
+        states, so a uniformly random input gives a uniformly random expected output. Defaults to 'zero'.
 
     Returns
     -------
     tuple
         A tuple containing the list of constructed diagnostic states and the list of constructed state preparation
-        circuits.
+        circuits, which prepare each state from |0...0> (empty in 'zero' mode, X^k on each qudit in 'random' mode).
     """
     if mode == 'zero':
         state = [0] * np.prod(diagnostic_circuits[0].dimensions)
@@ -555,9 +569,94 @@ def construct_diagnostic_states(diagnostic_circuits: list[Circuit],
         state_preparation_circuits = [Circuit.empty(diagnostic_circuits[0].dimensions)] * len(diagnostic_circuits)
         return ([state] * len(diagnostic_circuits), state_preparation_circuits)
     elif mode == 'random':
-        raise Exception('Random diagnostic states not yet implemented')
+        states, state_preparation_circuits = [], []
+        for circuit in diagnostic_circuits:
+            dimensions = [int(d) for d in circuit.dimensions]
+            values = [np.random.randint(d) for d in dimensions]
+            state = np.zeros(int(np.prod(dimensions)), dtype=int)
+            state[bases_to_int(values, dimensions)] = 1
+            preparation = Circuit.empty(dimensions=dimensions)
+            for qudit, value in enumerate(values):
+                for _ in range(value):
+                    preparation.add_gate(X, qudit)
+            states.append(state)
+            state_preparation_circuits.append(preparation)
+        return states, state_preparation_circuits
     else:
         raise Exception('Diagnostic state mode not recognized')
+
+
+def construct_diagnostic_expected_outputs(diagnostic_circuits: list[Circuit],
+                                          diagnostic_states: list[np.ndarray]) -> list[np.ndarray]:
+    """
+    Computes the ideal outcome of every diagnostic circuit on its computational basis input state.
+
+    A diagnostic circuit is a measurement circuit with every H replaced by H^4 = I, so it maps computational basis
+    states to computational basis states (up to a phase). The outcome is computed classically, gate by gate, keeping
+    only the few basis states that appear inside each H^4 group, without building the circuit's full unitary.
+
+    Parameters
+    ----------
+    diagnostic_circuits : list[Circuit]
+        The diagnostic circuits.
+    diagnostic_states : list[np.ndarray]
+        Their input states, each a computational basis state vector, in the same order.
+
+    Returns
+    -------
+    list[np.ndarray]
+        The ideal outcome of every circuit (the value of every qudit), in the same order.
+
+    Raises
+    ------
+    ValueError
+        If an input state is not a computational basis state, or a circuit does not map its input state to a single
+        computational basis state (the circuit is not computational, so the 'random' diagnostic mode cannot be used).
+    """
+    local_unitaries = {}            # (gate, dimension) -> dense local unitary
+    outputs = {}                    # (circuit, input) -> output, for circuits repeated across shots
+    expected_outputs = []
+    for circuit, state in zip(diagnostic_circuits, diagnostic_states):
+        dimensions = [int(d) for d in circuit.dimensions]
+        state = np.asarray(state)
+        support = np.flatnonzero(np.abs(state) > 1e-9)
+        if len(support) != 1 or not np.isclose(abs(state[support[0]]), 1):
+            raise ValueError("Diagnostic input states must be computational basis states.")
+        values = tuple(int(v) for v in int_to_bases(int(support[0]), dimensions))
+        key = (tuple((id(gate), tuple(int(q) for q in qudits))
+                     for gate, qudits in zip(circuit.gates, circuit.qudit_indices)), values)
+        if key not in outputs:
+            outputs[key] = _ideal_basis_output(circuit, values, dimensions, local_unitaries)
+        expected_outputs.append(outputs[key].copy())
+    return expected_outputs
+
+
+def _ideal_basis_output(circuit: Circuit, values: tuple[int, ...], dimensions: list[int],
+                        local_unitaries: dict, atol: float = 1e-9) -> np.ndarray:
+    """The computational basis state that circuit maps the basis state values to; ValueError if there is none."""
+    amplitudes = {values: 1.0 + 0j}
+    for gate, qudits in zip(circuit.gates, circuit.qudit_indices):
+        qudits = [int(q) for q in qudits]
+        d = dimensions[qudits[0]]
+        if (id(gate), d) not in local_unitaries:
+            U = gate.local_unitary(d)
+            local_unitaries[(id(gate), d)] = U.toarray() if hasattr(U, "toarray") else np.asarray(U)
+        U = local_unitaries[(id(gate), d)]
+        local_dimensions = [dimensions[q] for q in qudits]
+        new_amplitudes = {}
+        for basis, amplitude in amplitudes.items():
+            column = U[:, np.ravel_multi_index([basis[q] for q in qudits], local_dimensions)]
+            for row in np.flatnonzero(np.abs(column) > atol):
+                output = list(basis)
+                for q, value in zip(qudits, np.unravel_index(row, local_dimensions)):
+                    output[q] = int(value)
+                output = tuple(output)
+                new_amplitudes[output] = new_amplitudes.get(output, 0) + amplitude * column[row]
+        amplitudes = {basis: a for basis, a in new_amplitudes.items() if abs(a) > atol}
+    if len(amplitudes) != 1 or not np.isclose(abs(next(iter(amplitudes.values()))), 1):
+        raise ValueError("A diagnostic circuit does not map its input to a single computational basis state, so the "
+                         "'random' diagnostic mode cannot be used with it.")
+    return np.array(next(iter(amplitudes)), dtype=int)
 
 
 def standard_noise_probability_function(circuit: Circuit, p_entangling=0.03,

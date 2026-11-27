@@ -1,6 +1,7 @@
 """Dephasing: after every gate, with probability p the coherences of the gate's qudits are
-destroyed, rho -> (1 - p) rho + p sum_k |k><k| rho |k><k|. Computational-basis populations
-are unchanged, so circuits acting on |0...0> (AQUIRE's diagnostics) never show it.
+destroyed, rho -> (1 - p) rho + p sum_k |k><k| rho |k><k|. It does nothing to a computational
+basis state, so AQUIRE's diagnostics (the measurement circuit run on |0...0>, with every H
+replaced by H^4) only see it inside their H^4 groups, not after the circuit's S and CX gates.
 p gives the matched process infidelity r: p = r / (1 - 1/d_S).
 """
 from .simulator import NoiseModel, dephasing_probability, matched_infidelity

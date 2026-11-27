@@ -169,10 +169,13 @@ def config_params() -> dict:
         "diagnostic_mode": {
             "type": "str",
             "optional": False,
-            "default": "Zero",
-            "description": ("Wether to use the zero state for hardware error diagnostics or a random (computational) "
-                            "stabilizer state of the circuit"),
-            "accepted": "Zero | Random | informed"
+            "default": "zero",
+            "description": ("Input states of the hardware error diagnostics. 'random' is the method of the paper "
+                            "(App. D of arXiv:2605.00682): every diagnostic shot starts from a uniformly random "
+                            "computational basis state and fails if its outcome differs from the ideal output of the "
+                            "diagnostic circuit. 'zero' is the simpler variant: every diagnostic shot starts from "
+                            "|0...0> and fails if any qudit reads non-zero. 'informed' is not implemented yet."),
+            "accepted": "zero | random"
         },
         "calculate_true_values": {
             "type": "bool",

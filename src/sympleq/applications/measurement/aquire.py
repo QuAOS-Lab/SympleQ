@@ -10,6 +10,7 @@ from sympleq.applications.measurement.allocation import (sort_hamiltonian, choos
                                                          construct_circuit_list, update_data,
                                                          construct_diagnostic_circuits, standard_error_function,
                                                          construct_diagnostic_states,
+                                                         construct_diagnostic_expected_outputs,
                                                          update_diagnostic_data, standard_noise_probability_function,
                                                          mcmc_number_initial_samples, mcmc_number_max_samples)
 from sympleq.applications.measurement.covariance_graph import (graph, quditwise_commutation_graph, commutation_graph,
@@ -29,7 +30,9 @@ class AquireConfig:
                  psi: list[float | complex] | list[float] | list[complex] | np.ndarray | None = None,
                  commutation_mode: str = "general",  # "general" or "quditwise"/"bitwise"/"local"
                  allocation_mode: str = "set",  # random
-                 diagnostic_mode: str = "zero",  # "zero" or "random" or  TODO: "informed" for readout error-mitigation
+                 # "random": random computational inputs, the paper's method (App. D of arXiv:2605.00682);
+                 # "zero": every diagnostic starts from |0...0>; TODO: "informed" for readout error-mitigation
+                 diagnostic_mode: str = "zero",
                  calculate_true_values: bool = True,
                  enable_diagnostics: bool = False,
                  auto_update_covariance_graph: bool = True,
@@ -510,6 +513,7 @@ class Aquire:
         self.diagnostic_circuits = []
         self.diagnostic_state_preparation_circuits = []
         self.diagnostic_states = []
+        self.diagnostic_expected_outputs = []  # ideal outcome of every diagnostic shot, aligned with the states
         self.diagnostic_results = []
         self.diagnostic_data = np.zeros((self._H.n_paulis(), 2))
         self._outcome_distributions = {}  # cache for config.outcome_distribution_function
@@ -719,7 +723,8 @@ class Aquire:
             data = update_diagnostic_data(self.cliques[:s],
                                           self.diagnostic_results[:s],
                                           data,
-                                          mode=self.config.diagnostic_mode)
+                                          mode=self.config.diagnostic_mode,
+                                          expected_outputs=self.diagnostic_expected_outputs[:s])
         if len(shot) == 1:
             return data
         else:
@@ -842,19 +847,28 @@ class Aquire:
         self.diagnostic_circuits : list
             Extended with the newly constructed diagnostic circuits.
         self.diagnostic_states : list
-            Extended with the newly constructed diagnostic states.
+            Extended with the newly constructed diagnostic states: |0...0> in 'zero' mode, uniformly random
+            computational basis states in 'random' mode (the paper's method, App. D).
+        self.diagnostic_expected_outputs : list
+            Extended with the ideal outcome of every new diagnostic circuit on its state (all zeros in 'zero' mode).
         self.diagnostic_state_preparation_circuits : list
             Extended with the newly constructed diagnostic state preparation-circuits.
         """
         self.config.enable_diagnostics = True
         if self.config.diagnostic_mode is None:
-            self.config.diagnostic_mode = 'Zero'
+            self.config.diagnostic_mode = "zero"
         n = len(self.diagnostic_circuits)
         diagnostic_circuit_list = construct_diagnostic_circuits(self.circuits[n:])
         self.diagnostic_circuits += diagnostic_circuit_list
         diagnostic_state_list, dsp_circuits_list = construct_diagnostic_states(diagnostic_circuit_list,
                                                                                mode=self.config.diagnostic_mode)
         self.diagnostic_states += diagnostic_state_list
+        if self.config.diagnostic_mode == "random":
+            self.diagnostic_expected_outputs += construct_diagnostic_expected_outputs(diagnostic_circuit_list,
+                                                                                      diagnostic_state_list)
+        else:
+            self.diagnostic_expected_outputs += [np.zeros(len(self.H.dimensions), dtype=int)
+                                                 for _ in diagnostic_circuit_list]
         self.diagnostic_state_preparation_circuits += dsp_circuits_list
         return diagnostic_circuit_list, dsp_circuits_list
 
@@ -984,7 +998,7 @@ class Aquire:
                 "allocated diagnostic measurements.", UserWarning)
         self.config.enable_diagnostics = True
         if self.config.diagnostic_mode is None:
-            self.config.diagnostic_mode = 'Zero'
+            self.config.diagnostic_mode = "zero"
         self.diagnostic_results += diagnostic_results
 
         while len(self.systematic_variance) < len(self.update_steps):
@@ -993,10 +1007,12 @@ class Aquire:
                 break
             new_cliques = self.cliques[self.update_steps[i - 1]:self.update_steps[i]]
             new_diagnostic_results = self.diagnostic_results[self.update_steps[i - 1]:self.update_steps[i]]
+            new_expected_outputs = self.diagnostic_expected_outputs[self.update_steps[i - 1]:self.update_steps[i]]
             self.diagnostic_data = update_diagnostic_data(new_cliques,
                                                           new_diagnostic_results,
                                                           self.diagnostic_data,
-                                                          mode=self.config.diagnostic_mode)
+                                                          mode=self.config.diagnostic_mode,
+                                                          expected_outputs=new_expected_outputs)
             if self.config.enable_debug_checks:
                 self.check_diagnostic_data()
             self.systematic_variance.append(calculate_systematic_variance_estimate(self.data, self.H.weights,
@@ -1110,13 +1126,13 @@ class Aquire:
         simulated_diagnostic_results = []
         offset = len(self.diagnostic_results)
         for i, dsp_circuit in enumerate(self.diagnostic_circuits_since_last_update()):
+            state = self.diagnostic_states[offset + i]          # indexed by shot, not by position in this round
             if self.config.outcome_distribution_function is not None:
-                state = self.diagnostic_states[offset + i]
                 pdf = self.outcome_distribution(dsp_circuit, state, ("diagnostic", str(self.cliques[offset + i])),
                                                 diagnostic=True)
                 simulated_diagnostic_results.append(sample_outcome(pdf, self.H.dimensions))
                 continue
-            result = simulate_measurement(self.H, self.diagnostic_states[i], dsp_circuit)
+            result = simulate_measurement(self.H, state, dsp_circuit)
             noise_probability = self.config.noise_probability_function(dsp_circuit, *self.config.noise_probability_args,
                                                                        **self.config.noise_kwargs)
 
@@ -1133,10 +1149,12 @@ class Aquire:
                 break
             new_cliques = self.cliques[self.update_steps[i - 1]:self.update_steps[i]]
             new_diagnostic_results = self.diagnostic_results[self.update_steps[i - 1]:self.update_steps[i]]
+            new_expected_outputs = self.diagnostic_expected_outputs[self.update_steps[i - 1]:self.update_steps[i]]
             self.diagnostic_data = update_diagnostic_data(new_cliques,
                                                           new_diagnostic_results,
                                                           self.diagnostic_data,
-                                                          mode=self.config.diagnostic_mode)
+                                                          mode=self.config.diagnostic_mode,
+                                                          expected_outputs=new_expected_outputs)
             if self.config.enable_debug_checks:
                 self.check_diagnostic_data()
 
