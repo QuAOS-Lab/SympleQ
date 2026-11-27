@@ -1,7 +1,7 @@
 """Coherent over-rotation: after every gate, each of the gate's qudits is rotated by
-exp(-i theta (X + X^dagger)/2), with theta giving the matched process infidelity. The angle
-is the same at every gate and every shot (an idealisation). It moves population between
-computational states, so AQUIRE's diagnostics do see it.
+exp(-i theta (X + X^dagger)/2), with theta giving the matched process infidelity. theta is
+the same at every gate and every shot, one value for local gates and one for entangling
+gates. The rotation moves population between computational basis states.
 """
 from .simulator import NoiseModel, coherent_angle, coherent_unitary, matched_infidelity
 
@@ -10,8 +10,8 @@ class OverRotation(NoiseModel):
     name = "over_rotation"
     axis = "x"
 
-    def __init__(self, strength=1.0, d=3, fraction=1.0):
-        self.theta = {kind: coherent_angle(fraction * matched_infidelity(strength, d, kind), d, n, self.axis)
+    def __init__(self, strength=1.0, d=3):
+        self.theta = {kind: coherent_angle(matched_infidelity(strength, d, kind), d, n, self.axis)
                       for kind, n in (("local", 1), ("entangling", 2))}
         self._unitaries = {}
 

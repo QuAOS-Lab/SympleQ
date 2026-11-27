@@ -8,8 +8,8 @@ from .simulator import P_ENTANGLING, P_LOCAL, NoiseModel
 class Depolarising(NoiseModel):
     name = "depolarising"
 
-    def __init__(self, strength=1.0, d=3, fraction=1.0):
-        self.p = {"local": fraction * strength * P_LOCAL, "entangling": fraction * strength * P_ENTANGLING}
+    def __init__(self, strength=1.0, d=3):
+        self.p = {"local": strength * P_LOCAL, "entangling": strength * P_ENTANGLING}
 
     def after_gate(self, sim, rho, qudits, kind):
         p = self.p[kind]

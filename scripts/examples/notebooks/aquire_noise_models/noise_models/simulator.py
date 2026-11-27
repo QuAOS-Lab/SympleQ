@@ -1,11 +1,10 @@
 """Exact density-matrix simulation of qudit circuits with gate-level noise models.
 
-A noise model (NoiseModel subclass) has up to three hooks:
+A noise model (NoiseModel subclass) has up to two hooks:
 
-    prepare(sim, rho)                  noise on the input state (measurement circuits only)
     after_gate(sim, rho, qudits, kind) noise after every gate, on that gate's qudits;
                                        kind is "local" (one qudit) or "entangling" (two or more)
-    measure(sim, pdf, circuit)         noise on the outcome probabilities (readout, AQUIRE's model)
+    measure(sim, pdf, circuit)         noise on the outcome probabilities (AQUIRE's uniform model)
 
 GateNoiseSimulator(dims, [models]) returns the exact outcome probabilities of a circuit. It
 is called as AQUIRE's outcome_distribution_function: sim(circuit, state, diagnostic=False).
@@ -27,9 +26,6 @@ P_ENTANGLING = 0.079    # ... per entangling gate
 class NoiseModel:
     """No noise. Subclasses override the hooks they need."""
     name = "noiseless"
-
-    def prepare(self, sim, rho):
-        return rho
 
     def after_gate(self, sim, rho, qudits, kind):
         return rho
@@ -54,16 +50,13 @@ class GateNoiseSimulator:
         self._gates = {}
 
     def __call__(self, circuit, state, diagnostic=False):
-        """AQUIRE's outcome_distribution_function; diagnostics start from the given basis state, without
-        state-preparation noise."""
-        return self.outcome_distribution(circuit, state, state_prep_noise=not diagnostic)
+        """AQUIRE's outcome_distribution_function. Measurement and diagnostic circuits are simulated alike,
+        from the given state, so diagnostic is not used."""
+        return self.outcome_distribution(circuit, state)
 
-    def outcome_distribution(self, circuit, state, state_prep_noise=True):
+    def outcome_distribution(self, circuit, state):
         psi = np.asarray(state, dtype=complex).ravel()
         rho = np.outer(psi, psi.conj())
-        if state_prep_noise:
-            for m in self.models:
-                rho = m.prepare(self, rho)
         for gate, qudits in zip(circuit.gates, circuit.qudit_indices):
             qudits = [int(q) for q in qudits]
             key = (gate.name, tuple(qudits))

@@ -3,7 +3,6 @@ from .dephasing import Dephasing
 from .depolarising import Depolarising
 from .over_rotation import OverRotation
 from .phase_error import PhaseError
-from .readout import Readout
 from .simulator import GateNoiseSimulator, NoiseModel, matched_infidelity, process_infidelity
 from .uniform import Uniform
 
@@ -12,4 +11,4 @@ MODELS = {"uniform": Uniform, "depolarising": Depolarising, "over_rotation": Ove
           "dephasing": Dephasing, "phase_error": PhaseError}
 
 __all__ = ["GateNoiseSimulator", "NoiseModel", "MODELS", "Uniform", "Depolarising", "Dephasing", "OverRotation",
-           "PhaseError", "Readout", "matched_infidelity", "process_infidelity"]
+           "PhaseError", "matched_infidelity", "process_infidelity"]

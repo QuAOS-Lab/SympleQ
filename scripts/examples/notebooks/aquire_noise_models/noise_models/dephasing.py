@@ -1,7 +1,7 @@
 """Dephasing: after every gate, with probability p the coherences of the gate's qudits are
 destroyed, rho -> (1 - p) rho + p sum_k |k><k| rho |k><k|. It does nothing to a computational
-basis state, so AQUIRE's diagnostics (the measurement circuit run on |0...0>, with every H
-replaced by H^4) only see it inside their H^4 groups, not after the circuit's S and CX gates.
+basis state, so AQUIRE's diagnostics (the measurement circuit run on a computational basis state,
+with every H replaced by H^4) only see it inside their H^4 groups, not after the circuit's S and CX gates.
 p gives the matched process infidelity r: p = r / (1 - 1/d_S).
 """
 from .simulator import NoiseModel, dephasing_probability, matched_infidelity
@@ -10,9 +10,9 @@ from .simulator import NoiseModel, dephasing_probability, matched_infidelity
 class Dephasing(NoiseModel):
     name = "dephasing"
 
-    def __init__(self, strength=1.0, d=3, fraction=1.0):
-        self.p = {"local": dephasing_probability(fraction * matched_infidelity(strength, d, "local"), d, 1),
-                  "entangling": dephasing_probability(fraction * matched_infidelity(strength, d, "entangling"), d, 2)}
+    def __init__(self, strength=1.0, d=3):
+        self.p = {"local": dephasing_probability(matched_infidelity(strength, d, "local"), d, 1),
+                  "entangling": dephasing_probability(matched_infidelity(strength, d, "entangling"), d, 2)}
 
     def after_gate(self, sim, rho, qudits, kind):
         p = self.p[kind]
